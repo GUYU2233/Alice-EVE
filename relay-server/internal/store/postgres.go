@@ -18,9 +18,16 @@ func NewPostgres(ctx context.Context, dsn string) (*PostgresStore, error) {
 	}
 	return &PostgresStore{p}, p.Ping(ctx)
 }
+func nullableOwner(id string) any {
+	if id == "" {
+		return nil
+	}
+	return id
+}
+
 func (s *PostgresStore) Close() { s.Pool.Close() }
 func (s *PostgresStore) PutMessage(c context.Context, m Message) error {
-	_, e := s.Pool.Exec(c, "INSERT INTO messages(id,body) VALUES($1,$2) ON CONFLICT (id) DO NOTHING", m.ID, m.Body)
+	_, e := s.Pool.Exec(c, "INSERT INTO messages(id,body,owner_device_id) VALUES($1,$2,$3) ON CONFLICT (id) DO NOTHING", m.ID, m.Body, nullableOwner(m.OwnerDeviceID))
 	return e
 }
 func (s *PostgresStore) HasMessage(c context.Context, id string) (bool, error) {
@@ -48,6 +55,16 @@ func HashToken(t string) string { h := sha256.Sum256([]byte(t)); return hex.Enco
 func (s *PostgresStore) RevokeDevice(id string) bool {
 	_, e := s.Pool.Exec(context.Background(), "UPDATE devices SET revoked=true WHERE id=$1", id)
 	return e == nil
+}
+func (s *PostgresStore) VerifyTokenType(token, typ string) bool {
+	var revoked bool
+	e := s.Pool.QueryRow(context.Background(), "SELECT revoked FROM devices WHERE token_hash=$1 AND type=$2", HashToken(token), typ).Scan(&revoked)
+	return e == nil && !revoked
+}
+func (s *PostgresStore) OwnsToken(token, id string) bool {
+	var revoked bool
+	e := s.Pool.QueryRow(context.Background(), "SELECT revoked FROM devices WHERE id=$1 AND token_hash=$2", id, HashToken(token)).Scan(&revoked)
+	return e == nil && !revoked
 }
 func (s *PostgresStore) VerifyToken(token string) bool {
 	var revoked bool

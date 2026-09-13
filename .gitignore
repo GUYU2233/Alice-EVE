@@ -36,7 +36,11 @@ relay-server/relay-linux
 relay-server/relay-prod
 relay-server/relay-server/
 
-# Local release binaries
+# Local release binaries (keep only release notes/checksums in Git)
 Releases/*
 !Releases/RELEASES.md
 !Releases/*.txt
+releases/*
+!releases/RELEASES.md
+!releases/*.txt
+releases/archive/

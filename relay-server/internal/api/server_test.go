@@ -43,6 +43,17 @@ func TestPairCodeIsOneTime(t *testing.T) {
 	}
 }
 
+func TestProtectedEndpointsRejectUnauthenticated(t *testing.T) {
+	s := NewServer()
+	for _, path := range []string{"/api/v1/events", "/api/v1/alerts", "/api/v1/devices/revoke"} {
+		r := httptest.NewRecorder()
+		s.Handler().ServeHTTP(r, httptest.NewRequest("GET", path, nil))
+		if r.Code == 200 {
+			t.Fatalf("%s unexpectedly allowed", path)
+		}
+	}
+}
+
 func TestPublishDeduplicatesAndStreams(t *testing.T) {
 	s := NewServer()
 	// Register a real device through the pairing flow so authentication is tested.

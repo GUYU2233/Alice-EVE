@@ -111,7 +111,7 @@ func (s *Server) publish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if token == "" || !s.store.VerifyToken(token) {
+	if token == "" || !s.store.VerifyTokenType(token, "desktop") {
 		http.Error(w, "invalid device token", 401)
 		return
 	}
@@ -145,14 +145,32 @@ func (s *Server) publish(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"accepted": true, "duplicate": duplicate, "id": env.ID})
 }
 func (s *Server) ack(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost { http.Error(w, "method not allowed", 405); return }
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
 	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if token == "" || !s.store.VerifyToken(token) { http.Error(w, "invalid device token", 401); return }
-	var req struct{ ID string `json:"id"` }
-	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req) != nil || req.ID == "" { http.Error(w, "invalid id", 400); return }
-	s.mu.Lock(); defer s.mu.Unlock()
-	for i := range s.backlog { if s.backlog[i].ID == req.ID { s.backlog = append(s.backlog[:i], s.backlog[i+1:]...); break } }
-	w.Header().Set("Content-Type", "application/json"); _ = json.NewEncoder(w).Encode(map[string]any{"acked": true, "id": req.ID})
+	if token == "" || !s.store.VerifyTokenType(token, "mobile") {
+		http.Error(w, "invalid device token", 401)
+		return
+	}
+	var req struct {
+		ID string `json:"id"`
+	}
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req) != nil || req.ID == "" {
+		http.Error(w, "invalid id", 400)
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.backlog {
+		if s.backlog[i].ID == req.ID {
+			s.backlog = append(s.backlog[:i], s.backlog[i+1:]...)
+			break
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"acked": true, "id": req.ID})
 }
 
 func (s *Server) revoke(w http.ResponseWriter, r *http.Request) {
@@ -160,10 +178,11 @@ func (s *Server) revoke(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", 405)
 		return
 	}
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	var v struct {
 		DeviceID string `json:"deviceId"`
 	}
-	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&v) != nil || !s.store.RevokeDevice(v.DeviceID) {
+	if token == "" || json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&v) != nil || !s.store.OwnsToken(token, v.DeviceID) || !s.store.RevokeDevice(v.DeviceID) {
 		http.Error(w, "not found", 404)
 		return
 	}
@@ -176,7 +195,7 @@ func (s *Server) alerts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if token == "" || !s.store.VerifyToken(token) {
+	if token == "" || !s.store.VerifyTokenType(token, "desktop") {
 		http.Error(w, "invalid device token", 401)
 		return
 	}
@@ -188,6 +207,11 @@ func (s *Server) alerts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) eventsStream(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if token == "" || !s.store.VerifyTokenType(token, "mobile") {
+		http.Error(w, "invalid device token", 401)
+		return
+	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	f, ok := w.(http.Flusher)

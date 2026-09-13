@@ -85,6 +85,26 @@ func (s *MemoryStore) VerifyToken(token string) bool {
 	}
 	return false
 }
+func (s *MemoryStore) VerifyTokenType(token, typ string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	digest := sha256.Sum256([]byte(token))
+	h := hex.EncodeToString(digest[:])
+	for _, d := range s.devices {
+		if !d.Revoked && d.Type == typ && subtle.ConstantTimeCompare([]byte(d.TokenHash), []byte(h)) == 1 {
+			return true
+		}
+	}
+	return false
+}
+func (s *MemoryStore) OwnsToken(token, id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	digest := sha256.Sum256([]byte(token))
+	h := hex.EncodeToString(digest[:])
+	d, ok := s.devices[id]
+	return ok && !d.Revoked && subtle.ConstantTimeCompare([]byte(d.TokenHash), []byte(h)) == 1
+}
 func (s *MemoryStore) RevokeDevice(id string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -2,7 +2,10 @@ package store
 
 import "context"
 
-type Message struct{ ID, Body string }
+type Message struct {
+	ID, Body      string
+	OwnerDeviceID string
+}
 type Store interface {
 	PutMessage(context.Context, Message) error
 	HasMessage(context.Context, string) (bool, error)
@@ -11,5 +14,7 @@ type Store interface {
 	ConsumePair(context.Context, string) (PairCode, bool)
 	AddDevice(Device) error
 	VerifyToken(string) bool
+	VerifyTokenType(string, string) bool
+	OwnsToken(string, string) bool
 	RevokeDevice(string) bool
 }
