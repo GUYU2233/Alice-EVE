@@ -1,0 +1,42 @@
+# Secrets and production configuration
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+*credentials*
+*secret*
+/etc/
+
+# Databases and runtime data
+*.db
+*.sqlite
+*.sqlite3
+*.sqlitedb
+
+# Build output and dependencies
+node_modules/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+dist/
+
+# IDE/OS
+.vscode/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Reference checkouts and local release binaries
+参考项目/
+relay-server/relay-linux
+relay-server/relay-prod
+relay-server/relay-server/
+
+# Local release binaries
+Releases/*
+!Releases/RELEASES.md
+!Releases/*.txt

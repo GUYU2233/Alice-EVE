@@ -1,0 +1,6 @@
+905926f5db3e0520339928394728fdff75bf596f952c5dc61249747ed638bd8a  Releases\eve-assistant-mobile-windows.SHA256.txt
+8c58e0803e56fb9131d153891202a831cab9dade1c40b25925d05c2fb58e9eb4  Releases\eve-assistant-mobile-windows.zip
+f2f193ad4bbc36c030a3580bdc35d07255c310f03002b1bb213dcaaa7169c687  Releases\eve-assistant-v0.0.1-alpha.exe
+30c7f8eebfb2a154b5e301316be44e05eb31ffdfae7495cbf522091da68e19c9  Releases\eve-assistant-v0.0.1-alpha.zip
+51933c579fbc9fafb77d6ba3ff17a973f74f56092c8de435784c6814cfbd455b  Releases\relay-server.exe
+3901adc5390fcecd5580348eb890ae7662529e2581b2fcbd61bff440690a9b8d  Releases\SHA256SUMS-v0.0.1-alpha.txt

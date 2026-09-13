@@ -1,0 +1,84 @@
+openapi: 3.0.3
+info:
+  title: EVE Assistant Relay API
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      responses:
+        '200':
+          description: OK
+  /api/v1/pair:
+    post:
+      summary: Create a temporary pairing code
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PairingRequest'
+      responses:
+        '200':
+          description: Pairing code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PairResponse'
+  /api/v1/pair/confirm:
+    post:
+      summary: Consume a temporary pairing code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PairingRequest'
+      responses:
+        '200':
+          description: Device credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceResponse'
+  /api/v1/messages:
+    post:
+      summary: Publish a desktop event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Envelope'
+      responses:
+        '200':
+          description: Accepted
+components:
+  schemas:
+    Envelope:
+      type: object
+      required: [v, id, type, ts, sender, payload]
+      properties:
+        v: {type: integer, enum: [1]}
+        id: {type: string}
+        type: {type: string}
+        ts: {type: string, format: date-time}
+        sender: {type: string, enum: [desktop, mobile, relay]}
+        payload: {type: object}
+    PairingRequest:
+      type: object
+      properties:
+        deviceName: {type: string}
+        deviceType: {type: string, enum: [desktop, mobile]}
+        publicKey: {type: string}
+    DeviceResponse:
+      type: object
+      required: [deviceId, deviceToken]
+      properties:
+        deviceId: {type: string}
+        deviceToken: {type: string}
+    PairResponse:
+      type: object
+      required: [code, expiresAt]
+      properties:
+        code: {type: string}
+        expiresAt: {type: string, format: date-time}

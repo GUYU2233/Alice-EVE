@@ -1,0 +1,12 @@
+[Unit]
+Description=Alice Eve Relay Server
+After=network.target
+
+[Service]
+ExecStart=/opt/alice-relay/relay-server
+Environment=LISTEN_ADDR=127.0.0.1:18443
+EnvironmentFile=-/etc/alice-relay/relay.env
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
