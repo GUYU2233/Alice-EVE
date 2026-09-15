@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
 
-const OFFICIAL = 'https://relay.example.invalid';
+const PLACEHOLDER_SERVER = 'https://relay.example.invalid';
+const OFFICIAL = (import.meta.env.VITE_ALICE_OFFICIAL_SERVER || PLACEHOLDER_SERVER).trim().replace(/\/$/, '');
 const URL_KEY = 'alice.relay.url';
 const MODE_KEY = 'alice.relay.mode';
 
@@ -64,7 +65,10 @@ type OAuthCallback = { code?: string; state?: string; error?: string };
 type RuntimeWithBrowser = { BrowserOpenURL?: (url: string) => void };
 
 function readSavedUrl() {
-  try { return localStorage.getItem(URL_KEY) || OFFICIAL; } catch { return OFFICIAL; }
+  try {
+    const saved = localStorage.getItem(URL_KEY);
+    return !saved || saved === PLACEHOLDER_SERVER ? OFFICIAL : saved;
+  } catch { return OFFICIAL; }
 }
 function readRelayMode(): 'official' | 'custom' {
   try { return localStorage.getItem(MODE_KEY) === 'custom' ? 'custom' : 'official'; } catch { return 'official'; }
@@ -197,7 +201,7 @@ function App() {
     (async () => {
       try {
         const restored = await api.RelayURL?.();
-        const next = restored || readSavedUrl();
+        const next = !restored || restored === PLACEHOLDER_SERVER ? readSavedUrl() : restored;
         await api.SetRelayURL?.(next);
         const state = await api.PairingState?.().catch(() => undefined);
         if (!cancelled) {
