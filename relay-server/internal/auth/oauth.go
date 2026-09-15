@@ -26,19 +26,18 @@ var (
 	ErrAuthorizationPending = errors.New("oauth authorization is pending")
 )
 
-// OAuthConfig contains public OAuth parameters. Client credentials are not
-// supported: EVE SSO uses a public PKCE client and no client secret is ever
-// read, logged or persisted by this service.
+// OAuthConfig contains OAuth endpoint and client parameters. PKCE is mandatory;
+// confidential provider applications may additionally authenticate the token
+// request with a deployment-supplied HTTP Basic credential.
 type OAuthConfig struct {
 	AuthorizationEndpoint string
 	TokenEndpoint         string
 	UserinfoEndpoint      string
 	ClientID              string
-	// ClientSecret is optional. Confidential EVE applications authenticate the
-	// token request with HTTP Basic; public/native applications leave it empty
-	// and rely on PKCE. It must come from deployment secret storage.
-	ClientSecret string
-	RedirectURI  string
+	// ClientCredential is optional and must come from deployment secret storage.
+	// It is used only as the HTTP Basic password at the provider token endpoint.
+	ClientCredential string
+	RedirectURI      string
 	// DeepLinkURI is an exact, operator-configured post-login destination.
 	// Request parameters are never used as a redirect target.
 	DeepLinkURI string
@@ -389,8 +388,8 @@ func (s *Service) exchangeIdentity(ctx context.Context, callback CallbackState, 
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
-	if s.Config.ClientSecret != "" {
-		req.SetBasicAuth(s.Config.ClientID, s.Config.ClientSecret)
+	if s.Config.ClientCredential != "" {
+		req.SetBasicAuth(s.Config.ClientID, s.Config.ClientCredential)
 	}
 	resp, err := s.Config.HTTPClient.Do(req)
 	if err != nil {

@@ -54,7 +54,7 @@ func TestExchangeUsesBasicAuthForConfidentialClientAndPKCE(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/token" {
 			user, password, ok := r.BasicAuth()
-			sawBasic = ok && user == "client-id" && password == "deployment-secret"
+			sawBasic = ok && user == "client-id" && password == "fixture-value"
 			_ = r.ParseForm()
 			sawVerifier = r.Form.Get("code_verifier") != "" && r.Form.Get("client_secret") == ""
 			_ = json.NewEncoder(w).Encode(map[string]string{"access_token": "upstream"})
@@ -63,7 +63,7 @@ func TestExchangeUsesBasicAuthForConfidentialClientAndPKCE(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"sub": "123", "name": "Pilot"})
 	}))
 	defer srv.Close()
-	s, err := NewService(OAuthConfig{AuthorizationEndpoint: "https://login.example/authorize", TokenEndpoint: srv.URL + "/token", UserinfoEndpoint: srv.URL + "/userinfo", ClientID: "client-id", ClientSecret: "deployment-secret", RedirectURI: "https://client.example/cb", HTTPClient: srv.Client()})
+	s, err := NewService(OAuthConfig{AuthorizationEndpoint: "https://login.example/authorize", TokenEndpoint: srv.URL + "/token", UserinfoEndpoint: srv.URL + "/userinfo", ClientID: "client-id", ClientCredential: "fixture-value", RedirectURI: "https://client.example/cb", HTTPClient: srv.Client()})
 	if err != nil {
 		t.Fatal(err)
 	}

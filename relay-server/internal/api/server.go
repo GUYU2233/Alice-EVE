@@ -165,7 +165,7 @@ func NewServer(st ...store.Store) *Server {
 			TokenEndpoint:         os.Getenv("EVE_SSO_TOKEN_ENDPOINT"),
 			UserinfoEndpoint:      os.Getenv("EVE_SSO_USERINFO_ENDPOINT"),
 			ClientID:              os.Getenv("EVE_SSO_CLIENT_ID"),
-			ClientSecret:          os.Getenv("EVE_SSO_CLIENT_SECRET"),
+			ClientCredential:      os.Getenv("EVE_SSO_CLIENT_SECRET"),
 			RedirectURI:           os.Getenv("EVE_SSO_REDIRECT_URI"),
 			DeepLinkURI:           os.Getenv("EVE_SSO_DEEP_LINK_URI"),
 			Provider:              "eve",
