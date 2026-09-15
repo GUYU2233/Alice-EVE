@@ -30,7 +30,7 @@ func (s *DPAPISecretStore) Save(k, v string) error {
 	} else {
 		inBlob = &windows.DataBlob{Size: uint32(len(in)), Data: &in[0]}
 	}
-	err := windows.CryptProtectData(inBlob, nil, &out, 0, nil, 0, nil)
+	err := windows.CryptProtectData(inBlob, nil, nil, 0, nil, 0, &out)
 	if err != nil {
 		return err
 	}

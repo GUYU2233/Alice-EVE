@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -354,6 +355,9 @@ type Identity struct{ Provider, Subject, DisplayName string }
 type tokenResponse struct {
 	AccessToken string `json:"access_token"`
 }
+type oauthErrorResponse struct {
+	Error string `json:"error"`
+}
 
 // Exchange consumes state and exchanges the short-lived authorization code for
 // the minimum upstream identity. The upstream access token is held in memory
@@ -381,7 +385,13 @@ func (s *Service) exchangeIdentity(ctx context.Context, callback CallbackState, 
 	if s.Config.TokenEndpoint == "" || s.Config.UserinfoEndpoint == "" {
 		return CallbackState{}, Identity{}, errors.New("oauth identity exchange is not configured")
 	}
-	form := url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {callback.RedirectURI}, "client_id": {s.Config.ClientID}, "code_verifier": {verifier}}
+	form := url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {callback.RedirectURI}, "code_verifier": {verifier}}
+	// OAuth clients authenticate exactly once. Public clients identify themselves
+	// in the form; confidential clients use HTTP Basic and must not duplicate the
+	// client identifier in the request body.
+	if s.Config.ClientCredential == "" {
+		form.Set("client_id", s.Config.ClientID)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.Config.TokenEndpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		return CallbackState{}, Identity{}, err
@@ -393,11 +403,20 @@ func (s *Service) exchangeIdentity(ctx context.Context, callback CallbackState, 
 	}
 	resp, err := s.Config.HTTPClient.Do(req)
 	if err != nil {
+		log.Printf("oauth upstream stage=token transport_error=true")
 		return CallbackState{}, Identity{}, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		var providerError oauthErrorResponse
+		_ = json.NewDecoder(io.LimitReader(resp.Body, 8<<10)).Decode(&providerError)
+		providerError.Error = safeOAuthErrorCode(providerError.Error)
+		log.Printf("oauth upstream stage=token status=%d error=%s", resp.StatusCode, providerError.Error)
+		return CallbackState{}, Identity{}, errors.New("oauth token exchange failed")
+	}
 	var token tokenResponse
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 || json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&token) != nil || token.AccessToken == "" || len(token.AccessToken) > 4096 {
+	if json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&token) != nil || token.AccessToken == "" || len(token.AccessToken) > 4096 {
+		log.Printf("oauth upstream stage=token invalid_response=true")
 		return CallbackState{}, Identity{}, errors.New("oauth token exchange failed")
 	}
 	infoReq, err := http.NewRequestWithContext(ctx, http.MethodGet, s.Config.UserinfoEndpoint, nil)
@@ -408,18 +427,22 @@ func (s *Service) exchangeIdentity(ctx context.Context, callback CallbackState, 
 	infoReq.Header.Set("Authorization", "Bearer "+token.AccessToken)
 	infoResp, err := s.Config.HTTPClient.Do(infoReq)
 	if err != nil {
+		log.Printf("oauth upstream stage=identity transport_error=true")
 		return CallbackState{}, Identity{}, err
 	}
 	defer infoResp.Body.Close()
 	if infoResp.StatusCode < 200 || infoResp.StatusCode >= 300 {
+		log.Printf("oauth upstream stage=identity status=%d", infoResp.StatusCode)
 		return CallbackState{}, Identity{}, errors.New("oauth identity lookup failed")
 	}
 	var raw map[string]any
 	if err := json.NewDecoder(io.LimitReader(infoResp.Body, 64<<10)).Decode(&raw); err != nil {
+		log.Printf("oauth upstream stage=identity invalid_response=true")
 		return CallbackState{}, Identity{}, ErrIdentityInvalid
 	}
 	subject := firstString(raw, "sub", "subject", "character_id", "characterId", "CharacterID", "id")
 	if subject == "" {
+		log.Printf("oauth upstream stage=identity subject_missing=true")
 		return CallbackState{}, Identity{}, ErrIdentityInvalid
 	}
 	provider := s.Config.Provider
@@ -428,6 +451,15 @@ func (s *Service) exchangeIdentity(ctx context.Context, callback CallbackState, 
 	}
 	return callback, Identity{Provider: provider, Subject: subject, DisplayName: firstString(raw, "name", "character_name", "characterName", "CharacterName")}, nil
 }
+func safeOAuthErrorCode(value string) string {
+	switch strings.TrimSpace(value) {
+	case "invalid_request", "invalid_client", "invalid_grant", "unauthorized_client", "unsupported_grant_type", "invalid_scope", "access_denied", "temporarily_unavailable", "server_error":
+		return strings.TrimSpace(value)
+	default:
+		return "unknown"
+	}
+}
+
 func firstString(raw map[string]any, keys ...string) string {
 	for _, key := range keys {
 		if v, ok := raw[key]; ok {
