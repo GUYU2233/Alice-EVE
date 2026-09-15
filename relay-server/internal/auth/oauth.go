@@ -34,7 +34,11 @@ type OAuthConfig struct {
 	TokenEndpoint         string
 	UserinfoEndpoint      string
 	ClientID              string
-	RedirectURI           string
+	// ClientSecret is optional. Confidential EVE applications authenticate the
+	// token request with HTTP Basic; public/native applications leave it empty
+	// and rely on PKCE. It must come from deployment secret storage.
+	ClientSecret string
+	RedirectURI  string
 	// DeepLinkURI is an exact, operator-configured post-login destination.
 	// Request parameters are never used as a redirect target.
 	DeepLinkURI string
@@ -385,6 +389,9 @@ func (s *Service) exchangeIdentity(ctx context.Context, callback CallbackState, 
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
+	if s.Config.ClientSecret != "" {
+		req.SetBasicAuth(s.Config.ClientID, s.Config.ClientSecret)
+	}
 	resp, err := s.Config.HTTPClient.Do(req)
 	if err != nil {
 		return CallbackState{}, Identity{}, err
