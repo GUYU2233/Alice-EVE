@@ -17,8 +17,11 @@ class IntelParser {
     for (final s in systems) { if (RegExp('\\b${RegExp.escape(s)}\\b', caseSensitive:false).hasMatch(text)) out.add(_f('system',s,text,source,observed,ttl,0.95)); }
     for (final s in ships) { if (RegExp('\\b${RegExp.escape(s)}\\b', caseSensitive:false).hasMatch(text)) out.add(_f('ship',s,text,source,observed,ttl,0.88)); }
     var stance='unknown';
-    if (hostile.any((x)=>text.toLowerCase().contains(x.toLowerCase()))) stance='hostile';
-    else if (friendly.any((x)=>text.toLowerCase().contains(x.toLowerCase()))) stance='friendly';
+    if (hostile.any((x)=>text.toLowerCase().contains(x.toLowerCase()))) {
+      stance='hostile';
+    } else if (friendly.any((x)=>text.toLowerCase().contains(x.toLowerCase()))) {
+      stance='friendly';
+    }
     if (stance!='unknown') out.add(_f('stance',stance,text,source,observed,ttl,0.82));
     return out;
   }

@@ -4,16 +4,22 @@
 
 ## Desktop App
 
-未发现 `desktop-app` 的 `.exe`、`.zip`、checksum 或 release notes 产物。
+当前工作区 `releases/` 目录存在以下（被 `.gitignore` 排除、未纳入 Git 对象）产物：
 
-## Mobile Windows
+- `releases/eve-assistant-v0.0.1-alpha.exe`
+- `releases/eve-assistant-v0.0.1-alpha.zip`
 
-未发现 `mobile-app` Windows `.zip`、checksum 或 release notes 产物。仓库中没有 APK 发布文件，故不虚构 APK 条目。
+## Mobile
+
+当前工作区 `releases/` 目录存在以下（被 `.gitignore` 排除、未纳入 Git 对象）产物：
+
+- `releases/eve-assistant-mobile-android-v0.0.1-alpha.apk`
+- `releases/eve-assistant-mobile-windows.zip`
 
 ## Other Existing Binary
 
-- `relay-server/relay-server/relay-server.exe` — 现有 relay-server 可执行文件（不属于 desktop-app 或 mobile Windows 发布产物）。
+历史提交曾包含 `relay-server/relay-linux`、`relay-server/relay-prod`、`relay-server/relay-server/bin/relay-server` 和 `relay-server/relay-server/relay-server.exe`；这些旧服务端二进制不属于客户端发布产物，且当前命名 refs 已不再包含它们。
 
 ## Checksums
 
-未对 desktop-app 或 mobile Windows 产物生成 checksum：扫描未发现对应的可发布 `.exe`/`.zip` 文件。
+`releases/SHA256SUMS.txt` 是当前跟踪的清单，列出上述四个工作区产物的 SHA-256；清单中的文件名相对于 `releases/` 目录解析。产物本身被忽略，不应据此声称它们已经提交到 Git 或上传到远端。

@@ -1,12 +1,14 @@
-# 桌面端、Relay 与手机端通信协议
+# 桌面端、服务端与手机端通信协议
+
+> 术语与兼容性：本文将产品和文档统一称为“服务端”（Server）。仅为保持协议兼容，协议线字段 `sender: "relay"` 和现有 API/实现标识继续保留；不改变任何 API 路径、字段或协议行为。
 
 ## 1. 范围与拓扑
 
 ```text
-Mobile App ── HTTPS/WSS ──> Relay Server <── HTTPS/WSS ── Desktop App
+Mobile App ── HTTPS/WSS ──> Server <── HTTPS/WSS ── Desktop App
 ```
 
-桌面端只建立出站 WSS；Relay 不反向连接桌面端。EVE SSO access/refresh token 只存在桌面端安全存储中，永不上传 Relay。
+桌面端只建立出站 WSS；服务端不反向连接桌面端。EVE SSO access/refresh token 只存在桌面端安全存储中，永不上传服务端。
 
 通信分为：
 
@@ -41,7 +43,7 @@ Mobile App ── HTTPS/WSS ──> Relay Server <── HTTPS/WSS ── Deskto
 | `version` | integer | 当前为 `1`；未知版本拒绝 |
 | `messageId` | string | ULID/UUID；同一发送方范围内唯一 |
 | `correlationId` | string/null | 请求与响应、重试关联；事件可为空 |
-| `sender` | enum | `desktop`、`mobile`、`relay` |
+| `sender` | enum | `desktop`、`mobile`、`relay`（协议兼容值） |
 | `recipient` | string/null | 设备地址；广播为 null，由权限决定 |
 | `type` | string | 版本化消息类型 |
 | `createdAt` | RFC3339 | 允许时钟偏差 ±5 分钟 |
@@ -101,16 +103,16 @@ Mobile App ── HTTPS/WSS ──> Relay Server <── HTTPS/WSS ── Deskto
 
 推荐流程：
 
-1. 手机通过 HTTPS 登录 Relay。
+1. 手机通过 HTTPS 登录服务端。
 2. 手机生成设备密钥对，私钥仅保存在 iOS Keychain/Android Keystore。
-3. 手机调用 `pairing.create`，Relay 返回 5 分钟有效、一次性短码和二维码 payload。
+3. 手机调用 `pairing.create`，服务端返回 5 分钟有效、一次性短码和二维码 payload。
 4. 桌面端登录同一账号，输入/扫描短码并展示设备名称与权限。
 5. 用户在桌面端确认，桌面端提交 `pairing.confirm`，附设备公钥签名。
-6. Relay 绑定 `userId + desktopDeviceId + mobileDeviceId`，签发设备级短期 access token/refresh token。
+6. 服务端绑定 `userId + desktopDeviceId + mobileDeviceId`，签发设备级短期 access token/refresh token。
 
 配对码必须：单次使用、5 分钟过期、绑定用户、尝试次数上限 5、成功或撤销后立即失效。设备支持重命名、列出最后在线时间和主动撤销。
 
-Relay 不接受仅凭设备 ID 的配对确认；敏感操作要求设备私钥签名，签名覆盖 `version|messageId|type|createdAt|payloadHash`。
+服务端不接受仅凭设备 ID 的配对确认；敏感操作要求设备私钥签名，签名覆盖 `version|messageId|type|createdAt|payloadHash`。
 
 ## 5. ACK、重试与 Outbox
 
@@ -125,15 +127,15 @@ Relay 不接受仅凭设备 ID 的配对确认；敏感操作要求设备私钥�
 }
 ```
 
-`stage`：`received`、`persisted`、`delivered`、`processed`。桌面端必须先写本地 Outbox，再发送；收到 Relay `persisted` ACK 后才可标记服务端已持久化。手机收到事件后返回 `received`，用户确认后可返回 `processed`。
+`stage`：`received`、`persisted`、`delivered`、`processed`。桌面端必须先写本地 Outbox，再发送；收到服务端 `persisted` ACK 后才可标记服务端已持久化。手机收到事件后返回 `received`，用户确认后可返回 `processed`。
 
 建议 Outbox 状态：`pending → sent → server_acked → delivered → processed`；失败可回到 `pending`。重试使用指数退避（1s、2s、4s、8s、最多 5 分钟）和随机抖动；过期事件不重试。服务器离线事件保留 7 天或达到用户配额即停止保存。
 
 ## 6. 幂等与顺序
 
-幂等键为：`(senderDeviceId, messageId)`。Relay 对重复消息返回同一 ACK，不重复创建事件、推送或执行查询。事件业务去重可额外使用 `eventId`。
+幂等键为：`(senderDeviceId, messageId)`。服务端对重复消息返回同一 ACK，不重复创建事件、推送或执行查询。事件业务去重可额外使用 `eventId`。
 
-WSS 断线后客户端发送 `sync.request`，带 `lastAckedMessageId` 或服务器 cursor；Relay 返回缺失事件，客户端按 `messageId` 幂等应用。不存在全局顺序保证；同一设备到同一设备的事件按服务器 cursor 排序。告警显示时间以 `createdAt` 为主、`observedAt` 为事实时间。
+WSS 断线后客户端发送 `sync.request`，带 `lastAckedMessageId` 或服务器 cursor；服务端返回缺失事件，客户端按 `messageId` 幂等应用。不存在全局顺序保证；同一设备到同一设备的事件按服务器 cursor 排序。告警显示时间以 `createdAt` 为主、`observedAt` 为事实时间。
 
 ## 7. 错误模型
 
@@ -188,10 +190,10 @@ HTTP 映射：400/401/403/404/409/413/429/500/503。错误响应不得包含堆�
 - 配对码一次性、短期、限尝试
 - WSS 心跳、连接数和消息速率限流
 - 时间窗口、nonce/messageId 防重放
-- Relay 日志只记录 requestId、设备 ID、类型、状态、大小和耗时
+- 服务端日志只记录 requestId、设备 ID、类型、状态、大小和耗时
 - 推送正文只放非敏感摘要；敏感详情在 App 鉴权后拉取
 - 所有设备支持撤销；账号支持撤销全部设备
-- 桌面端 Token、原始日志、邮件、钱包和资产不上传 Relay
+- 桌面端 Token、原始日志、邮件、钱包和资产不上传服务端
 - 数据保留、删除、导出和隐私设置可配置
 
 ## 10. 协议版本与共享 Schema
@@ -217,9 +219,9 @@ Schema 是唯一真源；修改字段需增加兼容性说明。新增字段必�
 
 ## 11. 传输选择
 
-- 桌面↔Relay：WSS 长连接，HTTPS 补偿同步
-- 手机↔Relay：WSS 前台实时，HTTPS 历史/设置，FCM/APNs 后台推送
-- 手机↔桌面：逻辑上经过 Relay，不建立直连
+- 桌面↔服务端：WSS 长连接，HTTPS 补偿同步
+- 手机↔服务端：WSS 前台实时，HTTPS 历史/设置，FCM/APNs 后台推送
+- 手机↔桌面：逻辑上经过服务端，不建立直连
 - 桌面离线：手机只能查看服务器已保存的有限事件，不能访问本地数据
 
 ## 12. MVP 约束

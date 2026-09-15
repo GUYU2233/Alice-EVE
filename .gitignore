@@ -1,13 +1,28 @@
 # Secrets and production configuration
 .env
 .env.*
+!.env.example
+!**/*.env.example
 *.key
 *.pem
 *.p12
 *.pfx
+*.crt
+*.csr
+**/google-services.json
+**/agconnect-services.json
 *credentials*
 *secret*
+*token*
+*.kubeconfig
+terraform.tfstate*
+
+# Local operator/deployment files (never publish host-specific configuration)
 /etc/
+relay-server/config/*.env
+!relay-server/config/*.env.example
+**/deploy/local/
+
 
 # Databases and runtime data
 *.db

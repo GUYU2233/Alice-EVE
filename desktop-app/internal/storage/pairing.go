@@ -53,6 +53,9 @@ func LoadPairing(ctx context.Context, s Store) (PairingState, error) {
 	}
 	defer rows.Close()
 	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return PairingState{}, err
+		}
 		return PairingState{}, ErrPairingNotFound
 	}
 	var b []byte

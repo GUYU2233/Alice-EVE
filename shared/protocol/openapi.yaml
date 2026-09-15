@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: EVE Assistant Relay API
+  title: EVE Assistant Server API
   version: 1.0.0
 paths:
   /health:
@@ -40,6 +40,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DeviceResponse'
+  /api/v1/alerts:
+    get:
+      summary: Fetch mobile-owned pending alerts
+      parameters:
+        - {name: cursor, in: query, schema: {type: integer, format: int64, default: 0}}
+        - {name: limit, in: query, schema: {type: integer, maximum: 100, default: 100}}
+      responses:
+        '200': {description: Incremental alert backlog}
+  /api/v1/sync:
+    get:
+      summary: Fetch mobile-owned pending messages after a cursor
+      parameters:
+        - {name: cursor, in: query, schema: {type: integer, format: int64, default: 0}}
+        - {name: limit, in: query, schema: {type: integer, maximum: 100, default: 100}}
+      responses:
+        '200': {description: Incremental synchronization result}
+  /api/v1/messages/ack:
+    post:
+      summary: Acknowledge a message for the authenticated mobile device
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [id], properties: {id: {type: string}, messageId: {type: string}, ackMessageId: {type: string}}}
+      responses:
+        '200': {description: Acknowledged}
   /api/v1/messages:
     post:
       summary: Publish a desktop event
@@ -52,8 +78,214 @@ paths:
       responses:
         '200':
           description: Accepted
+  /api/v1/auth/device/start:
+    post:
+      summary: Start one-time device authorization without a pairing code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceAuthStartRequest'
+      responses:
+        '200':
+          description: Short-lived authorization challenge
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceAuthStartResponse'
+  /api/v1/auth/device/complete:
+    post:
+      summary: Consume a one-time device authorization challenge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceAuthCompleteRequest'
+      responses:
+        '200':
+          description: Access and refresh credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceAuthResponse'
+  /api/v1/auth/device/revoke:
+    post:
+      summary: Revoke the current device and all of its sessions
+      security: [{bearerAuth: []}]
+      responses:
+        '204': {description: Revoked}
+  /api/v1/auth/token/refresh:
+    post:
+      summary: Rotate a refresh token (canonical alias)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [refreshToken], properties: {refreshToken: {type: string}}}
+      responses:
+        '200': {description: Rotated credentials}
+  /api/v1/auth/oauth/authorize:
+    get:
+      summary: Start EVE SSO Authorization Code + PKCE validation flow
+      responses:
+        '200': {description: Authorization URL and one-shot state}
+  /api/v1/auth/oauth/callback:
+    post:
+      summary: Validate OAuth state and PKCE binding (legacy; no identity exchange)
+      responses:
+        '200': {description: Validated callback}
+  /api/v1/auth/sso/start:
+    get:
+      summary: Start browser EVE SSO flow; sets Secure HttpOnly SameSite=Lax transaction cookie
+      responses:
+        '302': {description: Redirect to configured EVE authorization endpoint}
+        '404': {description: OAuth unavailable}
+    post:
+      summary: Start native EVE SSO Authorization Code + PKCE identity exchange
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SSOStartRequest'
+      responses:
+        '200':
+          description: Authorization URL and one-shot state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SSOStartResponse'
+  /api/v1/auth/sso/callback:
+    get:
+      summary: Consume browser OAuth callback and redirect to configured deep link
+      parameters:
+        - {name: code, in: query, required: true, schema: {type: string, maxLength: 2048}}
+        - {name: state, in: query, required: true, schema: {type: string}}
+        - {name: nonce, in: query, required: true, schema: {type: string}}
+      responses:
+        '302': {description: Success deep-link redirect; failures return generic 401 oauth_invalid}
+        '401': {description: Invalid or unbound callback}
+    post:
+      summary: Exchange EVE authorization code and issue Server account/device session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SSOCallbackRequest'
+      responses:
+        '200':
+          description: Server credentials (EVE tokens are never returned or stored)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SSOSessionResponse'
+  /api/v1/conversations:
+    get:
+      summary: List conversations visible to the authenticated account
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, maximum: 1000, default: 100}}
+      responses:
+        '200': {description: Conversation list}
+    post:
+      summary: Create a conversation bound to a desktop Agent
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ConversationCreateRequest'}
+      responses:
+        '200': {description: Created conversation}
+  /api/v1/conversations/{conversationId}:
+    get:
+      summary: Get a conversation
+      security: [{bearerAuth: []}]
+      parameters: [{name: conversationId, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Conversation}}
+  /api/v1/conversations/{conversationId}/messages:
+    get:
+      summary: List conversation messages after a cursor
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: conversationId, in: path, required: true, schema: {type: string}}
+        - {name: cursor, in: query, schema: {type: integer, format: int64, default: 0}}
+        - {name: limit, in: query, schema: {type: integer, maximum: 1000, default: 100}}
+      responses: {'200': {description: Cursor-paginated messages}}
+    post:
+      summary: Send a mobile message to the bound desktop Agent
+      security: [{bearerAuth: []}]
+      parameters: [{name: conversationId, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ConversationMessageInput'}
+      responses: {'200': {description: Persisted message}}
+  /api/v1/conversations/{conversationId}/run:
+    post:
+      summary: Start an Agent run (desktop only)
+      security: [{bearerAuth: []}]
+      parameters: [{name: conversationId, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json: {schema: {type: object, required: [messageId], properties: {messageId: {type: string}}}}
+      responses: {'200': {description: Queued run}}
+  /api/v1/conversations/{conversationId}/cancel:
+    post:
+      summary: Cancel a queued or running Agent run
+      security: [{bearerAuth: []}]
+      parameters: [{name: conversationId, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        content:
+          application/json: {schema: {type: object, required: [runId], properties: {runId: {type: string}}}}
+      responses: {'200': {description: Cancelled run}}
+  /api/v1/realtime:
+    get:
+      summary: Authenticated WSS event stream
+      security: [{bearerAuth: []}]
+      responses: {'101': {description: Switching Protocols}}
 components:
   schemas:
+    ConversationCreateRequest:
+      type: object
+      required: [targetDeviceId, agentKind]
+      properties:
+        targetDeviceId: {type: string}
+        agentKind: {type: string}
+    ConversationMessageInput:
+      type: object
+      required: [clientMessageId, operation, body]
+      properties:
+        clientMessageId: {type: string}
+        operation: {type: string, enum: [get_desktop_status, get_recent_intel, get_route_summary, get_character_summary]}
+        body: {type: string, maxLength: 262144}
+        metadata: {type: object}
+    AgentRun:
+      type: object
+      required: [id, conversationId, status]
+      properties:
+        id: {type: string}
+        conversationId: {type: string}
+        inputMessageId: {type: string}
+        status: {type: string, enum: [queued, running, completed, failed, cancelled, timed_out]}
+        startedAt: {type: string, format: date-time}
+        completedAt: {type: string, format: date-time}
+        errorCode: {type: string}
+    RunEvent:
+      type: object
+      required: [id, runId, sequence, type]
+      properties:
+        id: {type: string}
+        runId: {type: string}
+        sequence: {type: integer, format: int64}
+        type: {type: string, enum: [agent.run.started, agent.run.delta, agent.run.completed, agent.run.failed, agent.run.cancelled]}
+        payload: {type: object}
+
     Envelope:
       type: object
       required: [v, id, type, ts, sender, payload]
@@ -62,8 +294,10 @@ components:
         id: {type: string}
         type: {type: string}
         ts: {type: string, format: date-time}
+        # `relay` is retained as a wire-value for backward compatibility.
         sender: {type: string, enum: [desktop, mobile, relay]}
         payload: {type: object}
+        recipient: {type: string, description: Target device address such as mobile:<deviceId>}
     PairingRequest:
       type: object
       properties:
@@ -82,3 +316,77 @@ components:
       properties:
         code: {type: string}
         expiresAt: {type: string, format: date-time}
+    SSOStartRequest:
+      type: object
+      required: [codeChallenge, deviceName, deviceType]
+      properties:
+        codeChallenge: {type: string, minLength: 43, maxLength: 128}
+        redirectUri: {type: string, format: uri}
+        deviceName: {type: string, minLength: 1, maxLength: 128}
+        deviceType: {type: string, enum: [desktop, mobile]}
+        publicKey: {type: string, maxLength: 4096}
+    SSOStartResponse:
+      type: object
+      required: [authorizationUrl, state, expiresIn]
+      properties:
+        authorizationUrl: {type: string, format: uri}
+        state: {type: string, minLength: 43}
+        expiresIn: {type: integer, format: int64}
+    SSOCallbackRequest:
+      type: object
+      required: [state, code, codeVerifier]
+      properties:
+        state: {type: string}
+        code: {type: string, maxLength: 2048}
+        codeVerifier: {type: string, minLength: 43, maxLength: 128}
+    SSOSessionResponse:
+      type: object
+      required: [tokenType, expiresIn, accessToken, refreshToken, accessExpiresAt, refreshExpiresAt, sessionId, accountId]
+      properties:
+        tokenType: {type: string, enum: [Bearer]}
+        expiresIn: {type: integer, format: int64}
+        accessToken: {type: string}
+        refreshToken: {type: string}
+        deviceToken: {type: string}
+        accessExpiresAt: {type: string, format: date-time}
+        refreshExpiresAt: {type: string, format: date-time}
+        sessionId: {type: string}
+        accountId: {type: string}
+        deviceId: {type: string}
+    DeviceAuthStartRequest:
+      type: object
+      required: [deviceName, deviceType]
+      properties:
+        accountId: {type: string}
+        provider: {type: string}
+        subject: {type: string}
+        displayName: {type: string}
+        deviceName: {type: string}
+        deviceType: {type: string, enum: [desktop, mobile]}
+        publicKey: {type: string}
+    DeviceAuthStartResponse:
+      type: object
+      required: [challenge, expiresAt, expiresIn]
+      properties:
+        challenge: {type: string}
+        expiresAt: {type: string, format: date-time}
+        expiresIn: {type: integer, format: int64}
+    DeviceAuthCompleteRequest:
+      type: object
+      required: [challenge]
+      properties:
+        challenge: {type: string}
+    DeviceAuthResponse:
+      type: object
+      required: [tokenType, expiresIn, accessToken, refreshToken, accessExpiresAt, refreshExpiresAt, sessionId, accountId, deviceId]
+      properties:
+        tokenType: {type: string, enum: [Bearer]}
+        expiresIn: {type: integer, format: int64}
+        accessToken: {type: string}
+        refreshToken: {type: string}
+        deviceToken: {type: string}
+        accessExpiresAt: {type: string, format: date-time}
+        refreshExpiresAt: {type: string, format: date-time}
+        sessionId: {type: string}
+        accountId: {type: string}
+        deviceId: {type: string}

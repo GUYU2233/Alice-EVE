@@ -24,7 +24,13 @@ func (s *DPAPISecretStore) Save(k, v string) error {
 	}
 	in := []byte(v)
 	var out windows.DataBlob
-	err := windows.CryptProtectData(&windows.DataBlob{Size: uint32(len(in)), Data: &in[0]}, nil, &out, 0, nil, 0, nil)
+	var inBlob *windows.DataBlob
+	if len(in) == 0 {
+		inBlob = &windows.DataBlob{}
+	} else {
+		inBlob = &windows.DataBlob{Size: uint32(len(in)), Data: &in[0]}
+	}
+	err := windows.CryptProtectData(inBlob, nil, &out, 0, nil, 0, nil)
 	if err != nil {
 		return err
 	}
@@ -46,6 +52,9 @@ func (s *DPAPISecretStore) Load(k string) (string, error) {
 	}
 	if err != nil {
 		return "", err
+	}
+	if len(b) == 0 {
+		return "", errors.New("secret file is empty")
 	}
 	var out windows.DataBlob
 	err = windows.CryptUnprotectData(&windows.DataBlob{Size: uint32(len(b)), Data: &b[0]}, nil, nil, 0, nil, 0, &out)

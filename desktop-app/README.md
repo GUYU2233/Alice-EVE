@@ -42,5 +42,5 @@ Windows amd64 发布文件：
 ## 后续工作
 
 1. 添加 SQLite 驱动与迁移。
-2. 实现 ESI Gateway、SDE repository、Intel pipeline 与 relay outbox。
+2. 实现 ESI Gateway、SDE repository、Intel pipeline 与服务端 outbox。
 3. 增加调用应用服务的 Wails bindings，避免直接暴露数据库或令牌。
