@@ -317,6 +317,12 @@ func (r *RelayClient) do(ctx context.Context, m, p string, body []byte, out inte
 		return &RelayError{Kind: kind, Err: e}
 	}
 	defer resp.Body.Close()
+	// 202 means the asynchronous OAuth handoff has not completed yet. Treat it
+	// as an explicit retryable condition rather than decoding an error envelope
+	// as empty credentials and prematurely stopping desktop polling.
+	if p == "/api/v1/auth/sso/callback" && resp.StatusCode == http.StatusAccepted {
+		return &RelayError{Kind: "oauth_pending", Status: resp.StatusCode, Err: errors.New("oauth authorization is pending")}
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		var detail struct {
 			Error struct {

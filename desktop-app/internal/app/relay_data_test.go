@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"eve-assistant/desktop-app/internal/protocol"
+	"eve-assistant/desktop-app/internal/storage"
 )
 
 func TestFetchAlertsDecodesCursorEnvelopeAndSendsBearer(t *testing.T) {
@@ -112,6 +113,37 @@ func TestRelayURLRejectsCleartextForeignHosts(t *testing.T) {
 	}
 	if err := client.SetURL("http://127.0.0.1:8080"); err != nil {
 		t.Fatalf("loopback development URL rejected: %v", err)
+	}
+}
+
+func TestOAuthPendingResponseRemainsRetryable(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		if calls == 1 {
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"error":{"code":"authorization_pending","message":"oauth authorization is pending"}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"accessToken":"access","refreshToken":"refresh","deviceToken":"device","deviceId":"device-1","accountId":"account-1"}`))
+	}))
+	defer server.Close()
+	client := NewRelayClientWithSecrets(storage.NewMemorySecretStore())
+	_ = client.SetURL(server.URL)
+	client.pendingOAuthState, client.pendingOAuthVerifier = "state", strings.Repeat("a", 43)
+	if _, err := client.CompletePendingOAuthPKCE(context.Background()); !IsOAuthPending(err) {
+		t.Fatalf("first poll error=%v", err)
+	}
+	if client.pendingOAuthState == "" || client.pendingOAuthVerifier == "" {
+		t.Fatal("pending response consumed local OAuth capability")
+	}
+	credentials, err := client.CompletePendingOAuthPKCE(context.Background())
+	if err != nil || credentials.AccountID != "account-1" {
+		t.Fatalf("credentials=%+v err=%v", credentials, err)
+	}
+	if client.pendingOAuthState != "" || client.pendingOAuthVerifier != "" {
+		t.Fatal("successful response did not consume local OAuth capability")
 	}
 }
 
