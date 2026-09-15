@@ -4,6 +4,7 @@ import './style.css';
 
 const OFFICIAL = 'https://relay.example.invalid';
 const URL_KEY = 'alice.relay.url';
+const MODE_KEY = 'alice.relay.mode';
 
 type Finding = {
   kind: string; value: string; stance: string; source: string; summary: string;
@@ -65,6 +66,9 @@ type RuntimeWithBrowser = { BrowserOpenURL?: (url: string) => void };
 function readSavedUrl() {
   try { return localStorage.getItem(URL_KEY) || OFFICIAL; } catch { return OFFICIAL; }
 }
+function readRelayMode(): 'official' | 'custom' {
+  try { return localStorage.getItem(MODE_KEY) === 'custom' ? 'custom' : 'official'; } catch { return 'official'; }
+}
 function formatTime(value?: string) {
   if (!value) return '—';
   const date = new Date(value);
@@ -79,7 +83,9 @@ function statusMeta(state: ConnectionState) {
 
 function App() {
   const api = (window as any).go?.main?.App as Api | undefined;
+  const [relayMode, setRelayMode] = useState<'official' | 'custom'>(readRelayMode);
   const [url, setUrl] = useState(readSavedUrl);
+  const [draftMode, setDraftMode] = useState<'official' | 'custom'>(relayMode);
   const [draftUrl, setDraftUrl] = useState(url);
   const [connection, setConnection] = useState<ConnectionState>('initializing');
   const [nav, setNav] = useState<Nav>('intel');
@@ -296,12 +302,12 @@ function App() {
     finally { setSending(false); }
   };
   const saveSettings = async () => {
-    const next = draftUrl.trim().replace(/\/$/, '');
-    if (!/^https?:\/\/[^\s]+$/i.test(next)) { setError('服务器地址必须是有效的 http(s) URL。'); return; }
-    try { await api?.SetRelayURL?.(next); localStorage.setItem(URL_KEY, next); setUrl(next); setConnection('ready'); setSettingsOpen(false); announce('服务器配置已保存，请检查连接'); }
+    const next = (draftMode === 'official' ? OFFICIAL : draftUrl).trim().replace(/\/$/, '');
+    if (!/^https?:\/\/[^\s]+$/i.test(next)) { setError('自定义服务器地址必须是有效的 http(s) URL。'); return; }
+    try { await api?.SetRelayURL?.(next); localStorage.setItem(URL_KEY, next); localStorage.setItem(MODE_KEY, draftMode); setRelayMode(draftMode); setUrl(next); setConnection('ready'); setSettingsOpen(false); announce('Alice 服务器配置已保存，请检查连接'); }
     catch { setError('服务器地址保存失败。'); }
   };
-  const resetSettings = () => { setDraftUrl(OFFICIAL); announce('已恢复默认服务器地址，点击保存生效'); };
+  const resetSettings = () => { setDraftMode('official'); setDraftUrl(OFFICIAL); announce('已选择 Alice 官方服务器，点击保存生效'); };
   const configureSDE = async () => {
     if (!api?.SetSDEDirectory || !sdePath.trim()) { setError('请输入本机 SDE 数据目录路径。'); return; }
     try { await api.SetSDEDirectory(sdePath.trim()); const status = await api.ReindexSDE?.(); if (status) setSdeStatus(status); announce('SDE 索引已更新'); }
@@ -330,7 +336,7 @@ function App() {
     <div className="main-area">
       <header className="topbar">
         <div><div className="breadcrumb">ALICE-EVE / COMMAND DESK</div><h1>{nav === 'intel' ? '情报工作台' : nav === 'alerts' ? '告警中心' : nav === 'agent' ? 'Agent 会话' : '发送队列'} <em>v0.0.1-alpha</em></h1></div>
-        <div className="top-actions"><div className="top-server"><span className={`dot ${statusTone}`} />{statusLabel}<code>{url.replace(/^https?:\/\//, '')}</code></div><button className="icon-button" onClick={checkConnection} title="检查连接">↻</button></div>
+        <div className="top-actions"><div className="top-server"><span className={`dot ${statusTone}`} />{statusLabel}</div><button className="icon-button" onClick={checkConnection} title="检查连接">↻</button></div>
       </header>
       {!api && <div className="runtime-banner" role="alert">⚠ 未检测到桌面运行时。请通过 Alice-EVE 桌面应用打开此页面。<button onClick={() => window.location.reload()}>重新加载</button></div>}
       {error && <div className="global-error" role="alert"><span>!</span>{error}<button onClick={() => setError('')} aria-label="关闭错误">×</button></div>}
@@ -349,7 +355,7 @@ function App() {
           </section>
         </main>
         <aside className="operations-column">
-          <section className="m3-card connection-card"><div className="card-heading"><div><span className="section-kicker">SERVER</span><h2>服务端连接</h2></div><span className={`status-chip ${statusTone}`}><span className="dot" />{statusLabel}</span></div><div className="server-url">{url}</div><button className="tonal-button full" disabled={connection === 'connecting' || !api} onClick={checkConnection}>{connection === 'connecting' ? <><span className="spinner" />检查中…</> : '检查连接'}</button></section>
+          <section className="m3-card connection-card"><div className="card-heading"><div><span className="section-kicker">SERVER</span><h2>服务端连接</h2></div><span className={`status-chip ${statusTone}`}><span className="dot" />{statusLabel}</span></div><p className="field-help server-mode-summary">{relayMode === 'official' ? 'Alice 官方服务器' : '自定义服务器'}</p><button className="tonal-button full" disabled={connection === 'connecting' || !api} onClick={checkConnection}>{connection === 'connecting' ? <><span className="spinner" />检查中…</> : '检查连接'}</button></section>
           <section className="m3-card pairing-card"><div className="card-heading"><div><span className="section-kicker">ACCOUNT DEVICE</span><h2>设备授权</h2></div><span className={`device-indicator ${pairedDevice ? 'linked' : ''}`}>{pairedDevice ? '已授权' : '未授权'}</span></div>{!pairedDevice && <><input value={deviceName} onChange={event => setDeviceName(event.target.value)} placeholder="设备名称" /><button className="primary-button full" disabled={oauthBusy || !api?.BeginOAuthLogin} onClick={beginOAuthLogin}>{oauthBusy ? <><span className="spinner" />处理中…</> : '使用 EVE SSO 登录'}</button>{oauthStatus && <small className="field-help">{oauthStatus}{oauthPending ? ' 完成浏览器登录后将自动返回。' : ''}</small>}<div className="field-help">也可使用已有账号 ID 进行设备授权</div><input value={accountId} onChange={event => setAccountId(event.target.value)} placeholder="账号 ID" /><button className="tonal-button full" disabled={connection !== 'connected' || !api?.AuthorizeDevice} onClick={authorizeDevice}>使用账号授权桌面设备</button></>}{pairedDevice && <small className="linked-device">设备 ID · {pairedDevice.slice(0, 18)}…</small>}</section>
           <section className="m3-card activity-card"><div className="card-heading"><div><span className="section-kicker">OPERATIONS</span><h2>操作面板</h2></div></div><button className="action-list-item" disabled={connection !== 'connected' || sending} onClick={sendTestAlert}><span className="action-icon warning">♢</span><span><strong>{sending ? '发送中…' : '发送模拟告警'}</strong><small>验证手机通知链路</small></span><span>›</span></button><div className="queue-summary"><span><b>{outboxCount}</b> 条待处理</span><span className="muted">Outbox {outboxCount ? '有新消息' : '为空'}</span></div></section>
           <section className="m3-card status-card"><div className="card-heading"><div><span className="section-kicker">WORKBENCH</span><h2>工作台状态</h2></div></div><div className="status-line"><span>连接</span><b className={statusTone}>{statusLabel}</b></div><div className="status-line"><span>配对设备</span><b>{pairedDevice ? '已绑定' : '未绑定'}</b></div><div className="status-line"><span>最近解析</span><b>{parseAt ? formatTime(parseAt) : '暂无'}</b></div></section>
@@ -366,7 +372,7 @@ function App() {
       {nav !== 'intel' && nav !== 'alerts' && nav !== 'queue' && nav !== 'agent' && <div className="placeholder-view"><h2>工作台</h2></div>}
     </div>
 
-    {settingsOpen && <div className="drawer-backdrop" onClick={() => setSettingsOpen(false)}><aside className="settings-drawer" onClick={event => event.stopPropagation()}><div className="drawer-heading"><div><span className="section-kicker">PREFERENCES</span><h2>工作台设置</h2></div><button className="icon-button" onClick={() => setSettingsOpen(false)} aria-label="关闭设置">×</button></div><label>服务端地址<input value={draftUrl} onChange={event => setDraftUrl(event.target.value)} placeholder="https://server.example" /></label><p className="field-help">仅支持 http(s) 地址。凭据与设备 Token 不会显示在此处。</p><div className="drawer-actions"><button className="tonal-button" onClick={resetSettings}>恢复默认</button><button className="primary-button" onClick={saveSettings}>保存配置</button></div><div className="drawer-divider" /><h3>本机 SDE 数据</h3><label>数据目录<input value={sdePath} onChange={event => setSdePath(event.target.value)} placeholder="D:\\EVE\\sde" /></label><button className="tonal-button full" onClick={configureSDE}>选择并建立索引</button><p className="field-help">仅读取所选目录内的 JSON/JSONL/CSV；不会执行文件或访问任意 URL。{sdeStatus.ready ? ` 已索引 ${sdeStatus.entries} 条。` : ''}</p>{sdeStatus.ready && <div className="sde-metadata"><small>索引版本 {sdeStatus.indexVersion || 1} · {sdeStatus.version || '未声明版本'}</small><small>{sdeStatus.source || '本地目录'} · SHA-256 {sdeStatus.checksum ? sdeStatus.checksum.slice(0, 12) + '…' : '—'}</small>{sdeStatus.signature && <small>签名：已提供</small>}</div>}<label>查询 SDE<input value={sdeQuery} onChange={event => setSdeQuery(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') searchSDE(); }} placeholder="输入舰船、星系或物品名" /></label>{sdeResults.length > 0 && <div className="sde-results">{sdeResults.map((item, index) => <div key={`${item.id}-${index}`}><strong>{item.name}</strong><small>{item.id || '—'} · {item.source || '本地索引'}</small></div>)}</div>}<h3>本机数据</h3><button className="danger-button full" onClick={clearPairing}>清除设备授权</button><p className="field-help">清除后需要重新完成账号设备授权。</p></aside></div>}
+    {settingsOpen && <div className="drawer-backdrop" onClick={() => setSettingsOpen(false)}><aside className="settings-drawer" onClick={event => event.stopPropagation()}><div className="drawer-heading"><div><span className="section-kicker">PREFERENCES</span><h2>工作台设置</h2></div><button className="icon-button" onClick={() => setSettingsOpen(false)} aria-label="关闭设置">×</button></div><section className="alice-server-settings"><h3>Alice 服务器设置</h3><div className="server-choice"><button type="button" className={draftMode === 'official' ? 'selected' : ''} onClick={() => setDraftMode('official')}><strong>Alice 官方服务器</strong><small>推荐，使用官方服务与最新能力</small></button><button type="button" className={draftMode === 'custom' ? 'selected' : ''} onClick={() => setDraftMode('custom')}><strong>自定义服务器</strong><small>连接你的私有或本地部署</small></button></div>{draftMode === 'custom' && <label>自定义服务器地址<input value={draftUrl} onChange={event => setDraftUrl(event.target.value)} placeholder="https://server.example" /></label>}<p className="field-help">凭据与设备 Token 不会显示在此处。</p></section><div className="drawer-actions"><button className="tonal-button" onClick={resetSettings}>恢复默认</button><button className="primary-button" onClick={saveSettings}>保存配置</button></div><div className="drawer-divider" /><h3>本机 SDE 数据</h3><label>数据目录<input value={sdePath} onChange={event => setSdePath(event.target.value)} placeholder="D:\\EVE\\sde" /></label><button className="tonal-button full" onClick={configureSDE}>选择并建立索引</button><p className="field-help">仅读取所选目录内的 JSON/JSONL/CSV；不会执行文件或访问任意 URL。{sdeStatus.ready ? ` 已索引 ${sdeStatus.entries} 条。` : ''}</p>{sdeStatus.ready && <div className="sde-metadata"><small>索引版本 {sdeStatus.indexVersion || 1} · {sdeStatus.version || '未声明版本'}</small><small>{sdeStatus.source || '本地目录'} · SHA-256 {sdeStatus.checksum ? sdeStatus.checksum.slice(0, 12) + '…' : '—'}</small>{sdeStatus.signature && <small>签名：已提供</small>}</div>}<label>查询 SDE<input value={sdeQuery} onChange={event => setSdeQuery(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') searchSDE(); }} placeholder="输入舰船、星系或物品名" /></label>{sdeResults.length > 0 && <div className="sde-results">{sdeResults.map((item, index) => <div key={`${item.id}-${index}`}><strong>{item.name}</strong><small>{item.id || '—'} · {item.source || '本地索引'}</small></div>)}</div>}<h3>本机数据</h3><button className="danger-button full" onClick={clearPairing}>清除设备授权</button><p className="field-help">清除后需要重新完成账号设备授权。</p></aside></div>}
     {toast && <div className="snackbar" role="status">✓ {toast}</div>}
   </div>;
 }
