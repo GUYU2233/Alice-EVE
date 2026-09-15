@@ -44,7 +44,13 @@ type RelayClient struct {
 	secrets                                 storage.SecretStore
 }
 
+func IsOAuthPending(err error) bool {
+	var relayErr *RelayError
+	return errors.As(err, &relayErr) && relayErr.Status == http.StatusAccepted
+}
+
 type OAuthCredentials struct {
+	Pending          bool      `json:"pending,omitempty"`
 	AccessToken      string    `json:"accessToken"`
 	RefreshToken     string    `json:"refreshToken"`
 	DeviceToken      string    `json:"deviceToken,omitempty"`
@@ -148,8 +154,15 @@ func (r *RelayClient) BeginOAuthPKCE(ctx context.Context, deviceName string) (OA
 	r.mu.Unlock()
 	return out, verifier, nil
 }
+func (r *RelayClient) CompletePendingOAuthPKCE(ctx context.Context) (OAuthCredentials, error) {
+	r.mu.RLock()
+	state, verifier := r.pendingOAuthState, r.pendingOAuthVerifier
+	r.mu.RUnlock()
+	return r.CompleteOAuthPKCE(ctx, state, "", verifier)
+}
+
 func (r *RelayClient) CompleteOAuthPKCE(ctx context.Context, state, code, verifier string) (OAuthCredentials, error) {
-	if strings.TrimSpace(state) == "" || strings.TrimSpace(code) == "" || strings.TrimSpace(verifier) == "" {
+	if strings.TrimSpace(state) == "" || strings.TrimSpace(verifier) == "" {
 		return OAuthCredentials{}, fmt.Errorf("oauth callback is incomplete")
 	}
 	r.mu.Lock()
@@ -157,14 +170,19 @@ func (r *RelayClient) CompleteOAuthPKCE(ctx context.Context, state, code, verifi
 		r.mu.Unlock()
 		return OAuthCredentials{}, fmt.Errorf("oauth callback state is invalid")
 	}
-	// Consume the local callback capability before network exchange to prevent replay.
-	r.pendingOAuthState, r.pendingOAuthVerifier = "", ""
 	r.mu.Unlock()
 	body, _ := json.Marshal(map[string]string{"state": state, "code": code, "codeVerifier": verifier})
 	var out OAuthCredentials
 	if err := r.do(ctx, http.MethodPost, "/api/v1/auth/sso/callback", body, &out); err != nil {
 		return OAuthCredentials{}, err
 	}
+	// Consume the local callback capability only after a successful exchange.
+	// Pending polls and transient network failures must remain retryable.
+	r.mu.Lock()
+	if r.pendingOAuthState == state && r.pendingOAuthVerifier == verifier {
+		r.pendingOAuthState, r.pendingOAuthVerifier = "", ""
+	}
+	r.mu.Unlock()
 	if err := r.SaveOAuthCredentials(out); err != nil {
 		return OAuthCredentials{}, err
 	}

@@ -94,6 +94,10 @@ export function ParseIntel(arg1) {
   return window['go']['main']['App']['ParseIntel'](arg1);
 }
 
+export function PollOAuthLogin() {
+  return window['go']['main']['App']['PollOAuthLogin']();
+}
+
 export function PublishTestAlert() {
   return window['go']['main']['App']['PublishTestAlert']();
 }

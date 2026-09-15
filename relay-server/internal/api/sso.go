@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -30,7 +31,7 @@ type SSOStartResponse struct {
 }
 type SSOCallbackRequest struct {
 	State        string `json:"state"`
-	Code         string `json:"code"`
+	Code         string `json:"code,omitempty"`
 	CodeVerifier string `json:"codeVerifier"`
 }
 
@@ -105,23 +106,42 @@ func (s *Server) ssoCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodGet {
-		// Expire the transaction cookie on every callback attempt, including
-		// malformed or forged callbacks, to prevent stale browser transactions.
-		http.SetCookie(w, &http.Cookie{Name: oauthBrowserCookie, Value: "", Path: "/", MaxAge: -1, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
 		q := r.URL.Query()
 		state, code := strings.TrimSpace(q.Get("state")), strings.TrimSpace(q.Get("code"))
-		cookie, err := r.Cookie(oauthBrowserCookie)
-		nonce := strings.TrimSpace(q.Get("nonce"))
-		if err != nil || state == "" || code == "" || nonce == "" || len(code) > 2048 {
+		if state == "" || code == "" || len(code) > 2048 {
 			httpapi.WriteError(w, r, http.StatusUnauthorized, "oauth_invalid", "oauth callback is invalid")
 			return
 		}
-		callback, identity, err := s.oauth.ExchangeBrowser(r.Context(), state, code, nonce, cookie.Value)
-		if err != nil {
-			httpapi.WriteError(w, r, 401, "oauth_invalid", "oauth callback is invalid")
+		if cookie, err := r.Cookie(oauthBrowserCookie); err == nil {
+			// Browser-originated transactions keep the verifier server-side and are
+			// bound to this Secure cookie and nonce.
+			http.SetCookie(w, &http.Cookie{Name: oauthBrowserCookie, Value: "", Path: "/", MaxAge: -1, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+			nonce := strings.TrimSpace(q.Get("nonce"))
+			if nonce == "" {
+				httpapi.WriteError(w, r, http.StatusUnauthorized, "oauth_invalid", "oauth callback is invalid")
+				return
+			}
+			callback, identity, exchangeErr := s.oauth.ExchangeBrowser(r.Context(), state, code, nonce, cookie.Value)
+			if exchangeErr != nil {
+				httpapi.WriteError(w, r, http.StatusUnauthorized, "oauth_invalid", "oauth callback is invalid")
+				return
+			}
+			s.issueSSOSession(w, r, callback, identity, true)
 			return
 		}
-		s.issueSSOSession(w, r, callback, identity, true)
+		// Native transactions never expose the verifier to the browser. Stage the
+		// one-time authorization code until the initiating app proves possession
+		// of that verifier through the POST completion endpoint.
+		if err := s.oauth.StageNativeCallback(state, code); err != nil {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "oauth_invalid", "oauth callback is invalid")
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte("<!doctype html><html><head><meta charset=\"utf-8\"><title>Alice-EVE</title></head><body><main><h1>登录授权已完成</h1><p>请返回 Alice-EVE 桌面应用，登录将自动完成。现在可以关闭此窗口。</p></main></body></html>"))
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -135,11 +155,27 @@ func (s *Server) ssoCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.State, req.Code, req.CodeVerifier = strings.TrimSpace(req.State), strings.TrimSpace(req.Code), strings.TrimSpace(req.CodeVerifier)
-	if req.State == "" || req.Code == "" || len(req.Code) > 2048 || req.CodeVerifier == "" {
+	if req.State == "" || req.CodeVerifier == "" || len(req.Code) > 2048 {
 		httpapi.WriteError(w, r, 400, "invalid_request", "invalid sso callback")
 		return
 	}
-	callback, identity, err := s.oauth.Exchange(r.Context(), req.State, req.Code, req.CodeVerifier)
+	var callback auth.CallbackState
+	var identity auth.Identity
+	var err error
+	if req.Code != "" {
+		// Retain compatibility for native clients that directly receive a code.
+		callback, identity, err = s.oauth.Exchange(r.Context(), req.State, req.Code, req.CodeVerifier)
+	} else {
+		callback, identity, err = s.oauth.CompleteNative(r.Context(), req.State, req.CodeVerifier)
+	}
+	if errors.Is(err, auth.ErrAuthorizationPending) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Retry-After", "2")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(httpapi.ErrorResponse{Error: httpapi.APIError{Code: "authorization_pending", Message: "oauth authorization is pending", RequestID: httpapi.RequestIDFromRequest(r)}})
+		return
+	}
 	if err != nil {
 		httpapi.WriteError(w, r, 401, "oauth_invalid", "oauth callback is invalid")
 		return

@@ -20,9 +20,10 @@ import (
 )
 
 var (
-	ErrInvalidState       = errors.New("invalid or expired oauth state")
-	ErrInvalidRedirectURI = errors.New("redirect URI is not allowed")
-	ErrIdentityInvalid    = errors.New("oauth identity is invalid")
+	ErrInvalidState         = errors.New("invalid or expired oauth state")
+	ErrInvalidRedirectURI   = errors.New("redirect URI is not allowed")
+	ErrIdentityInvalid      = errors.New("oauth identity is invalid")
+	ErrAuthorizationPending = errors.New("oauth authorization is pending")
 )
 
 // OAuthConfig contains public OAuth parameters. Client credentials are not
@@ -73,6 +74,10 @@ type stateRecord struct {
 	deviceName, deviceType, publicKey                      string
 	expiresAt                                              time.Time
 	browserHash                                            string
+	// authorizationCode is staged by the HTTPS callback for a native PKCE
+	// transaction. It remains server-side until the initiating client proves
+	// possession of the verifier, and is consumed exactly once.
+	authorizationCode string
 }
 type CallbackState struct {
 	RedirectURI string
@@ -140,6 +145,40 @@ func (s *StateStore) begin(challenge, verifier, nonce string, options StateOptio
 	s.mu.Unlock()
 	return state, nil
 }
+func (s *StateStore) StageAuthorizationCode(state, code string) error {
+	if state == "" || code == "" || len(code) > 2048 {
+		return ErrInvalidState
+	}
+	now := s.now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, ok := s.records[state]
+	if !ok || !now.Before(record.expiresAt) || record.browserHash != "" || record.codeVerifier != "" || record.authorizationCode != "" {
+		return ErrInvalidState
+	}
+	record.authorizationCode = code
+	s.records[state] = record
+	return nil
+}
+
+func (s *StateStore) ConsumeStaged(state, verifier string) (CallbackState, string, error) {
+	if state == "" || !validVerifier(verifier) {
+		return CallbackState{}, "", ErrInvalidState
+	}
+	now := s.now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, ok := s.records[state]
+	if !ok || !now.Before(record.expiresAt) || record.browserHash != "" || record.codeVerifier != "" || VerifyPKCE(verifier, record.challenge) != nil {
+		return CallbackState{}, "", ErrInvalidState
+	}
+	if record.authorizationCode == "" {
+		return CallbackState{}, "", ErrAuthorizationPending
+	}
+	delete(s.records, state)
+	return CallbackState{RedirectURI: record.redirectURI, DeviceName: record.deviceName, DeviceType: record.deviceType, PublicKey: record.publicKey}, record.authorizationCode, nil
+}
+
 func (s *StateStore) Consume(state, verifier string) (CallbackState, error) {
 	return s.ConsumeBound(state, verifier, "", "")
 }
@@ -149,11 +188,8 @@ func (s *StateStore) ConsumeBound(state, verifier, nonce, browserBinding string)
 	}
 	now := s.now()
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	record, ok := s.records[state]
-	if ok {
-		delete(s.records, state)
-	}
-	s.mu.Unlock()
 	if !ok || !now.Before(record.expiresAt) || VerifyPKCE(verifier, record.challenge) != nil {
 		return CallbackState{}, ErrInvalidState
 	}
@@ -175,6 +211,9 @@ func (s *StateStore) ConsumeBound(state, verifier, nonce, browserBinding string)
 			return CallbackState{}, ErrInvalidState
 		}
 	}
+	// Consume only after every capability check succeeds. Invalid verifiers,
+	// nonces, or browser bindings must never burn a legitimate transaction.
+	delete(s.records, state)
 	return CallbackState{RedirectURI: record.redirectURI, DeviceName: record.deviceName, DeviceType: record.deviceType, PublicKey: record.publicKey, Nonce: nonce}, nil
 }
 func hexHash(b []byte) string { return hex.EncodeToString(b) }
@@ -316,6 +355,18 @@ type tokenResponse struct {
 // Exchange consumes state and exchanges the short-lived authorization code for
 // the minimum upstream identity. The upstream access token is held in memory
 // only for this request and is never returned, logged or persisted.
+func (s *Service) StageNativeCallback(state, code string) error {
+	return s.States.StageAuthorizationCode(state, code)
+}
+
+func (s *Service) CompleteNative(ctx context.Context, state, verifier string) (CallbackState, Identity, error) {
+	callback, code, err := s.States.ConsumeStaged(state, verifier)
+	if err != nil {
+		return CallbackState{}, Identity{}, err
+	}
+	return s.exchangeIdentity(ctx, callback, code, verifier)
+}
+
 func (s *Service) Exchange(ctx context.Context, state, code, verifier string) (CallbackState, Identity, error) {
 	callback, err := s.Complete(state, code, verifier)
 	if err != nil {

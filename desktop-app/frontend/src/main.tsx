@@ -11,13 +11,13 @@ type Finding = {
   kind: string; value: string; stance: string; source: string; summary: string;
   observedAt: string; expiresAt: string; confidence: number;
 };
-type OAuthStart = { authorizationUrl: string; state: string; codeVerifier: string; expiresIn?: number };
-type OAuthCompletion = { accountId?: string; deviceId?: string; accessExpiresAt?: string; refreshExpiresAt?: string };
+type OAuthStart = { authorizationUrl: string; expiresIn?: number };
+type OAuthCompletion = { pending?: boolean; accountId?: string; deviceId?: string; accessExpiresAt?: string; refreshExpiresAt?: string };
 type Api = {
   RelayURL?: () => Promise<string> | string;
   SetRelayURL?: (url: string) => Promise<void> | void;
   BeginOAuthLogin?: (deviceName: string) => Promise<OAuthStart>;
-  CompleteOAuthLogin?: (state: string, code: string, verifier: string) => Promise<OAuthCompletion>;
+  PollOAuthLogin?: () => Promise<OAuthCompletion>;
   AuthorizeDevice?: (accountId: string, deviceName: string) => Promise<{ accountId: string; deviceId: string }>;
   CheckRelayHealth?: () => Promise<void> | void;
   GeneratePairingCode?: () => Promise<string> | string;
@@ -61,7 +61,6 @@ type ReconcileSnapshot = { snapshotCursor: number; conversations: Array<{ id: st
 
 type ConnectionState = 'initializing' | 'ready' | 'connecting' | 'connected' | 'error';
 type Nav = 'intel' | 'alerts' | 'agent' | 'queue';
-type OAuthCallback = { code?: string; state?: string; error?: string };
 type RuntimeWithBrowser = { BrowserOpenURL?: (url: string) => void };
 
 function readSavedUrl() {
@@ -122,7 +121,7 @@ function App() {
   const [runEventCursor, setRunEventCursor] = useState(0);
   const [accountId, setAccountId] = useState('');
   const [deviceName, setDeviceName] = useState('Alice-EVE Desktop');
-  const [oauthPending, setOauthPending] = useState<{ state: string; codeVerifier: string } | null>(null);
+  const [oauthPending, setOauthPending] = useState<{ expiresAt: number } | null>(null);
   const [oauthBusy, setOauthBusy] = useState(false);
   const [oauthStatus, setOauthStatus] = useState('');
   const [sdePath, setSdePath] = useState('');
@@ -135,59 +134,39 @@ function App() {
     window.setTimeout(() => setToast(current => current === message ? '' : current), 3600);
   }, []);
 
-  const completeOAuthCallback = useCallback(async (callback: OAuthCallback) => {
-    if (!callback.error && callback.code && callback.state && oauthPending && callback.state === oauthPending.state && api?.CompleteOAuthLogin) {
-      setOauthBusy(true); setError(''); setOauthStatus('正在完成登录…');
+  useEffect(() => {
+    if (!oauthPending || !api?.PollOAuthLogin) return;
+    let cancelled = false;
+    const poll = async () => {
+      if (cancelled) return;
+      if (Date.now() >= oauthPending.expiresAt) {
+        setOauthPending(null); setOauthBusy(false); setOauthStatus('登录已超时'); setError('OAuth 登录已超时，请重新开始登录。');
+        return;
+      }
       try {
-        const result = await api.CompleteOAuthLogin(callback.state, callback.code, oauthPending.codeVerifier);
-        setOauthPending(null);
+        const result = await api.PollOAuthLogin();
+        if (cancelled || result?.pending) return;
+        setOauthPending(null); setOauthBusy(false);
         if (result?.accountId) setAccountId(result.accountId);
         if (result?.deviceId) setPairedDevice(result.deviceId);
         setOauthStatus('登录成功'); announce('OAuth 登录成功，桌面设备已授权');
         void loadOperationalData();
-      } catch { setOauthStatus('登录失败'); setError('OAuth 登录回调处理失败，请重新开始登录。'); }
-      finally { setOauthBusy(false); }
-    } else if (callback.error) {
-      setOauthStatus('登录已取消'); setOauthPending(null); setError(`OAuth 登录未完成：${callback.error}`);
-    }
-  }, [api, announce, oauthPending]);
-
-  const parseOAuthCallback = useCallback((value: string | URL | undefined): OAuthCallback => {
-    try {
-      const parsed = value instanceof URL ? value : new URL(value || window.location.href);
-      return { code: parsed.searchParams.get('code') || undefined, state: parsed.searchParams.get('state') || undefined, error: parsed.searchParams.get('error') || undefined };
-    } catch { return {}; }
-  }, []);
-
-  useEffect(() => {
-    const handleCallback = (event: Event) => {
-      const detail = (event as CustomEvent<unknown>).detail;
-      if (detail && typeof detail === 'object' && ('code' in detail || 'state' in detail || 'error' in detail)) {
-        const callback = detail as { code?: unknown; state?: unknown; error?: unknown };
-        void completeOAuthCallback({ code: typeof callback.code === 'string' ? callback.code : undefined, state: typeof callback.state === 'string' ? callback.state : undefined, error: typeof callback.error === 'string' ? callback.error : undefined });
-        return;
+      } catch {
+        if (!cancelled) { setOauthPending(null); setOauthBusy(false); setOauthStatus('登录失败'); setError('OAuth 登录完成失败，请重新开始登录。'); }
       }
-      const raw = typeof detail === 'string' ? detail : detail && typeof detail === 'object' && 'url' in detail ? String((detail as { url?: unknown }).url || '') : undefined;
-      void completeOAuthCallback(parseOAuthCallback(raw));
     };
-    window.addEventListener('oauth-callback', handleCallback);
-    window.addEventListener('oauth_callback', handleCallback);
-    window.addEventListener('deep-link', handleCallback);
-    void completeOAuthCallback(parseOAuthCallback(window.location.href));
-    return () => {
-      window.removeEventListener('oauth-callback', handleCallback);
-      window.removeEventListener('oauth_callback', handleCallback);
-      window.removeEventListener('deep-link', handleCallback);
-    };
-  }, [completeOAuthCallback, parseOAuthCallback]);
+    void poll();
+    const timer = window.setInterval(() => void poll(), 2000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [api, announce, oauthPending]);
 
   const beginOAuthLogin = async () => {
     if (!api?.BeginOAuthLogin) { setError('当前桌面运行时不支持 OAuth 登录。'); return; }
     setOauthBusy(true); setError(''); setOauthStatus('正在准备登录…');
     try {
       const start = await api.BeginOAuthLogin(deviceName.trim() || 'Alice-EVE Desktop');
-      if (!start?.authorizationUrl || !start.state || !start.codeVerifier) throw new Error('OAuth 登录参数不完整');
-      setOauthPending({ state: start.state, codeVerifier: start.codeVerifier }); setOauthStatus('等待浏览器完成登录…');
+      if (!start?.authorizationUrl) throw new Error('OAuth 登录参数不完整');
+      setOauthPending({ expiresAt: Date.now() + Math.max(60, start.expiresIn || 600) * 1000 }); setOauthStatus('等待浏览器完成登录…');
       const runtime = (window as Window & { runtime?: RuntimeWithBrowser }).runtime;
       if (runtime?.BrowserOpenURL) runtime.BrowserOpenURL(start.authorizationUrl);
       else window.open(start.authorizationUrl, '_blank', 'noopener,noreferrer');
@@ -360,7 +339,7 @@ function App() {
         </main>
         <aside className="operations-column">
           <section className="m3-card connection-card"><div className="card-heading"><div><span className="section-kicker">SERVER</span><h2>服务端连接</h2></div><span className={`status-chip ${statusTone}`}><span className="dot" />{statusLabel}</span></div><p className="field-help server-mode-summary">{relayMode === 'official' ? 'Alice 官方服务器' : '自定义服务器'}</p><button className="tonal-button full" disabled={connection === 'connecting' || !api} onClick={checkConnection}>{connection === 'connecting' ? <><span className="spinner" />检查中…</> : '检查连接'}</button></section>
-          <section className="m3-card pairing-card"><div className="card-heading"><div><span className="section-kicker">ACCOUNT DEVICE</span><h2>设备授权</h2></div><span className={`device-indicator ${pairedDevice ? 'linked' : ''}`}>{pairedDevice ? '已授权' : '未授权'}</span></div>{!pairedDevice && <><input value={deviceName} onChange={event => setDeviceName(event.target.value)} placeholder="设备名称" /><button className="primary-button full" disabled={oauthBusy || !api?.BeginOAuthLogin} onClick={beginOAuthLogin}>{oauthBusy ? <><span className="spinner" />处理中…</> : '使用 EVE SSO 登录'}</button>{oauthStatus && <small className="field-help">{oauthStatus}{oauthPending ? ' 完成浏览器登录后将自动返回。' : ''}</small>}<div className="field-help">也可使用已有账号 ID 进行设备授权</div><input value={accountId} onChange={event => setAccountId(event.target.value)} placeholder="账号 ID" /><button className="tonal-button full" disabled={connection !== 'connected' || !api?.AuthorizeDevice} onClick={authorizeDevice}>使用账号授权桌面设备</button></>}{pairedDevice && <small className="linked-device">设备 ID · {pairedDevice.slice(0, 18)}…</small>}</section>
+          <section className="m3-card pairing-card"><div className="card-heading"><div><span className="section-kicker">ACCOUNT DEVICE</span><h2>设备授权</h2></div><span className={`device-indicator ${pairedDevice ? 'linked' : ''}`}>{pairedDevice ? '已授权' : '未授权'}</span></div>{!pairedDevice && <><input value={deviceName} onChange={event => setDeviceName(event.target.value)} placeholder="设备名称" /><button className="primary-button full" disabled={oauthBusy || !!oauthPending || !api?.BeginOAuthLogin} onClick={beginOAuthLogin}>{oauthPending ? <><span className="spinner" />等待 EVE 授权…</> : oauthBusy ? <><span className="spinner" />处理中…</> : '使用 EVE SSO 登录'}</button>{oauthStatus && <small className="field-help">{oauthStatus}{oauthPending ? ' 完成浏览器登录后将自动返回。' : ''}</small>}<div className="field-help">也可使用已有账号 ID 进行设备授权</div><input value={accountId} onChange={event => setAccountId(event.target.value)} placeholder="账号 ID" /><button className="tonal-button full" disabled={connection !== 'connected' || !api?.AuthorizeDevice} onClick={authorizeDevice}>使用账号授权桌面设备</button></>}{pairedDevice && <small className="linked-device">设备 ID · {pairedDevice.slice(0, 18)}…</small>}</section>
           <section className="m3-card activity-card"><div className="card-heading"><div><span className="section-kicker">OPERATIONS</span><h2>操作面板</h2></div></div><button className="action-list-item" disabled={connection !== 'connected' || sending} onClick={sendTestAlert}><span className="action-icon warning">♢</span><span><strong>{sending ? '发送中…' : '发送模拟告警'}</strong><small>验证手机通知链路</small></span><span>›</span></button><div className="queue-summary"><span><b>{outboxCount}</b> 条待处理</span><span className="muted">Outbox {outboxCount ? '有新消息' : '为空'}</span></div></section>
           <section className="m3-card status-card"><div className="card-heading"><div><span className="section-kicker">WORKBENCH</span><h2>工作台状态</h2></div></div><div className="status-line"><span>连接</span><b className={statusTone}>{statusLabel}</b></div><div className="status-line"><span>配对设备</span><b>{pairedDevice ? '已绑定' : '未绑定'}</b></div><div className="status-line"><span>最近解析</span><b>{parseAt ? formatTime(parseAt) : '暂无'}</b></div></section>
         </aside>

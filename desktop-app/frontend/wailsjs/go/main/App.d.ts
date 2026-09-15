@@ -51,6 +51,8 @@ export function PairingState():Promise<storage.PairingState>;
 
 export function ParseIntel(arg1:string):Promise<Array<protocol.IntelFinding>>;
 
+export function PollOAuthLogin():Promise<Record<string, any>>;
+
 export function PublishTestAlert():Promise<void>;
 
 export function QueryESI(arg1:string):Promise<eve.ESIResponse>;

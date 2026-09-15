@@ -55,11 +55,25 @@ func (a *App) BeginOAuthLogin(deviceName string) (map[string]interface{}, error)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{"authorizationUrl": start.AuthorizationURL, "state": start.State, "codeVerifier": verifier, "expiresIn": start.ExpiresIn}, nil
+	_ = verifier // retained only inside RelayClient; never expose the PKCE verifier to JavaScript.
+	return map[string]interface{}{"authorizationUrl": start.AuthorizationURL, "expiresIn": start.ExpiresIn}, nil
+}
+func (a *App) PollOAuthLogin() (map[string]interface{}, error) {
+	credentials, err := a.relay.CompletePendingOAuthPKCE(context.Background())
+	if err != nil {
+		if app.IsOAuthPending(err) {
+			return map[string]interface{}{"pending": true}, nil
+		}
+		return nil, err
+	}
+	return map[string]interface{}{"accountId": credentials.AccountID, "deviceId": credentials.DeviceID, "accessExpiresAt": credentials.AccessExpiresAt, "refreshExpiresAt": credentials.RefreshExpiresAt}, nil
 }
 func (a *App) CompleteOAuthLogin(state, code, verifier string) (map[string]interface{}, error) {
 	credentials, err := a.relay.CompleteOAuthPKCE(context.Background(), state, code, verifier)
 	if err != nil {
+		if app.IsOAuthPending(err) {
+			return map[string]interface{}{"pending": true}, nil
+		}
 		return nil, err
 	}
 	return map[string]interface{}{"accountId": credentials.AccountID, "deviceId": credentials.DeviceID, "accessExpiresAt": credentials.AccessExpiresAt, "refreshExpiresAt": credentials.RefreshExpiresAt}, nil

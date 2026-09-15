@@ -57,8 +57,11 @@ func TestOAuthStateIsOneTimeAndPKCEBound(t *testing.T) {
 	if _, err := s.Complete(a.State, "auth-code", a.CodeVerifier+"bad"); err == nil {
 		t.Fatal("wrong verifier accepted")
 	}
+	if _, err := s.Complete(a.State, "auth-code", a.CodeVerifier); err != nil {
+		t.Fatal("wrong verifier consumed a legitimate state")
+	}
 	if _, err := s.Complete(a.State, "auth-code", a.CodeVerifier); err == nil {
-		t.Fatal("state reused after failed PKCE validation")
+		t.Fatal("state reused after successful PKCE validation")
 	}
 }
 
@@ -82,8 +85,11 @@ func TestOAuthBrowserTransactionBindsNonceAndCookie(t *testing.T) {
 	if _, err := s.CompleteBound(a.State, "code", pkce.Verifier, a.Nonce, "wrong-cookie"); err == nil {
 		t.Fatal("wrong browser binding accepted")
 	}
+	if _, err := s.CompleteBound(a.State, "code", pkce.Verifier, a.Nonce, "cookie-binding"); err != nil {
+		t.Fatal("wrong browser binding consumed a legitimate state")
+	}
 	if _, err := s.CompleteBound(a.State, "code", pkce.Verifier, a.Nonce, "cookie-binding"); err == nil {
-		t.Fatal("consumed state accepted after failed binding")
+		t.Fatal("consumed state accepted after successful binding")
 	}
 	b, err := s.BeginWithPKCE(pkce, StateOptions{RedirectURI: s.Config.RedirectURI, BrowserBinding: "cookie-binding"})
 	if err != nil {
