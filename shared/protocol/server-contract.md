@@ -48,17 +48,19 @@
 
 认证接口以外的请求带 `Authorization: Bearer <short-lived-access-token>`。服务端从 token 得到 `accountId`、`deviceId`、设备类型和 capability；不信任 `X-Device-Id`、query `deviceId` 或 body 中的 owner 字段。所有响应带 `X-Request-Id`，客户端重试写操作必须带 `Idempotency-Key`。
 
-错误统一为：
+当前统一错误外层为：
 
 ```json
 {
-  "code": "SETTINGS_CONFLICT",
-  "message": "settings version is stale",
-  "retryable": false,
-  "correlationId": "01J...",
-  "details": {"currentVersion": 8}
+  "error": {
+    "code": "settings_conflict",
+    "message": "settings version is stale",
+    "requestId": "req-..."
+  }
 }
 ```
+
+更多 `details`/retryability 只能在端点契约明确后添加，客户端不得依赖尚未实现的平铺字段。
 
 `message` 面向客户端，不得泄漏 SQL、堆栈、内部路径、token 或原始私密数据。HTTP 映射：`400 INVALID_*`、`401 AUTH_REQUIRED/DEVICE_REVOKED`、`403 FORBIDDEN`、`404 NOT_FOUND`、`409 CONFLICT/DUPLICATE`、`413 MESSAGE_TOO_LARGE`、`429 RATE_LIMITED`、`503 UPSTREAM_UNAVAILABLE`。
 
@@ -75,9 +77,9 @@
 }
 ```
 
-`stage` 顺序为 `received -> persisted -> delivered -> processed`，允许重复提交同一阶段，不允许回退。`POST /api/v1/messages/{id}/ack` 必须验证 ACK 方是目标设备。服务端按 `expiresAt` 和账号 retention policy 清理。
+`stage` 顺序为 `received -> persisted -> delivered -> processed`，允许重复提交同一阶段，不允许回退。当前兼容入口是 `POST /api/v1/messages/ack`；`/messages/{id}/ack` 是目标形态。ACK 必须验证提交方是目标设备，服务端按 `expiresAt` 和账号 retention policy 清理。
 
-补偿同步使用：
+目标补偿同步形态如下；当前实现入口仍是 `/api/v1/sync`：
 
 ```text
 GET /api/v1/devices/{deviceId}/sync?after=<cursor>&limit=100
@@ -99,7 +101,7 @@ GET /api/v1/devices/{deviceId}/sync?after=<cursor>&limit=100
 
 ## 5. 安全边界
 
-1. EVE access/refresh token 只在桌面端安全存储；服务端 OAuth 组件只保存短期 state/challenge 和最小身份 subject。
+1. 客户端只保存 Alice 会话凭据，不接收 EVE token。服务端 OAuth 组件保存短期 state/challenge 和最小身份 subject；经授权的 EVE refresh grant 使用部署 keyring 加密持久化，access token 仅短时驻留内存。
 2. 手机端不得提交 EVE 凭据；手机请求桌面 Agent 只能使用固定 operation 白名单和服务端签发的 conversation 权限。
 3. 配对 challenge 绑定 `accountId + creatorDeviceId + targetType`，五分钟一次性、最多五次尝试；成功、过期和撤销都立即失效。
 4. 设置文档只允许白名单键和受限 JSON；不接受 token、私钥、任意命令、SQL、URL 或原始私密内容。

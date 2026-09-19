@@ -26,7 +26,7 @@ Go + Wails v2 + React/TypeScript 桌面客户端。
 
 环境要求：
 
-- Go 1.22+
+- Go 1.25+
 - Wails CLI v2（当前验证使用 v2.15.0）
 - Node.js 18+ 与 npm
 - Windows WebView2 Runtime

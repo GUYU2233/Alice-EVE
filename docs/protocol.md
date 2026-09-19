@@ -18,7 +18,7 @@ Mobile App ── HTTPS/WSS ──> Server <── HTTPS/WSS ── Desktop App
 
 ## 2. JSON Envelope
 
-所有 REST 请求体（除登录/健康检查）和 WSS 消息使用版本化 Envelope：
+版本化 Envelope 用于旧 `/api/v1/messages`、兼容同步/事件；账号、设备、EVE、交易、通知和会话 REST API 使用端点 DTO，WSS 使用独立版本化帧：
 
 ```json
 {
@@ -51,7 +51,7 @@ Mobile App ── HTTPS/WSS ──> Server <── HTTPS/WSS ── Desktop App
 | `payload` | object | 必须通过对应 JSON Schema |
 | `meta` | object | 不得放 Token、Authorization 或私密原文 |
 
-单条消息上限 256 KiB；事件摘要建议小于 16 KiB。所有字符串、数组深度和字段数量均需限制。
+当前全局 HTTP 请求体上限为 1 MiB、WSS 入站帧为 512 KiB；各端点可设置更小上限（认证接口为 4–8 KiB）。256 KiB 仍可作为 Envelope 目标上限，但需先统一实现和 Schema。所有字符串、数组深度和字段数量均需限制。
 
 ## 3. 消息类型
 
@@ -99,20 +99,11 @@ Mobile App ── HTTPS/WSS ──> Server <── HTTPS/WSS ── Desktop App
 
 默认只传摘要、实体 ID/名称、来源和时间；原始聊天、邮件、钱包、资产明细必须显式授权才可传输。
 
-## 4. 设备配对
+## 4. 设备授权
 
-推荐流程：
+当前规范设备接入使用 EVE SSO，或由已认证账号调用 `/api/v1/auth/device/start` 并一次性消费 5 分钟 challenge；完成后签发短期 access token、轮换 refresh token 和兼容设备凭据。
 
-1. 手机通过 HTTPS 登录服务端。
-2. 手机生成设备密钥对，私钥仅保存在 iOS Keychain/Android Keystore。
-3. 手机调用 `pairing.create`，服务端返回 5 分钟有效、一次性短码和二维码 payload。
-4. 桌面端登录同一账号，输入/扫描短码并展示设备名称与权限。
-5. 用户在桌面端确认，桌面端提交 `pairing.confirm`，附设备公钥签名。
-6. 服务端绑定 `userId + desktopDeviceId + mobileDeviceId`，签发设备级短期 access token/refresh token。
-
-配对码必须：单次使用、5 分钟过期、绑定用户、尝试次数上限 5、成功或撤销后立即失效。设备支持重命名、列出最后在线时间和主动撤销。
-
-服务端不接受仅凭设备 ID 的配对确认；敏感操作要求设备私钥签名，签名覆盖 `version|messageId|type|createdAt|payloadHash`。
+旧 `/api/v1/pair` 与 `/api/v1/pair/confirm` 是 deprecated 兼容路径，不具备账号绑定、设备签名或尝试次数上限，不得作为账号安全边界。目标状态仍是账号绑定、单次使用、短时有效、限尝试和设备密钥签名；在旧接口下线前必须保留明确的兼容风险说明。
 
 ## 5. ACK、重试与 Outbox
 
@@ -193,7 +184,7 @@ HTTP 映射：400/401/403/404/409/413/429/500/503。错误响应不得包含堆�
 - 服务端日志只记录 requestId、设备 ID、类型、状态、大小和耗时
 - 推送正文只放非敏感摘要；敏感详情在 App 鉴权后拉取
 - 所有设备支持撤销；账号支持撤销全部设备
-- 桌面端 Token、原始日志、邮件、钱包和资产不上传服务端
+- 原始 Chatlogs/Gamelogs 不上传服务端；EVE 凭证不得进入日志或模型上下文。服务端仅可为已授权账号加密保存可撤销的 EVE refresh grant，并按 scope 最小化同步私有数据
 - 数据保留、删除、导出和隐私设置可配置
 
 ## 10. 协议版本与共享 Schema
@@ -215,7 +206,7 @@ shared/protocol/
 └── examples/
 ```
 
-Schema 是唯一真源；修改字段需增加兼容性说明。新增字段必须可选；删除/改类型需提升协议主版本。生成代码禁止手改，CI 应执行 Schema 校验、示例解析和跨语言 round-trip 测试。
+当前 Schema/OpenAPI 仍是兼容草案：旧消息使用短字段 Envelope，多个业务 API 使用手写端点 DTO。完成实际路由/字段对齐和跨语言生成前，不能将其称为唯一真源。新增字段仍应保持兼容；破坏性变更需提升协议主版本。
 
 ## 11. 传输选择
 
@@ -226,4 +217,4 @@ Schema 是唯一真源；修改字段需增加兼容性说明。新增字段必�
 
 ## 12. MVP 约束
 
-第一版只实现：设备注册、二维码配对、WSS presence、`intel.alert`、`ack`、离线补发、FCM/APNs 推送、设备撤销和有限只读 `query.request`。先不实现手机独立 EVE SSO、原始日志同步、完整市场/地图同步和任何游戏操作。
+当前已包含账号会话、设备授权/撤销、兼容消息与同步、账号/设备隔离 WSS、Agent conversations、通知偏好/令牌、EVE SSO/ESI 同步和交易 API。旧配对/SSE/短字段 Envelope 仍是兼容面；FCM 生产 source/resolver 与 APNs dispatcher 尚未接线，且始终禁止自动游戏操作。

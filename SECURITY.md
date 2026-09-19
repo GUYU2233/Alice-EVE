@@ -29,7 +29,7 @@ Recommended controls:
 - Apply OWASP API controls: authentication and authorization on every non-health endpoint, object ownership checks, request/body limits, rate limits, strict CORS/Origin policy, generic error responses, and security event auditing without sensitive payloads.
 - Run the service as a non-root user with a private writable directory. Use systemd hardening (`NoNewPrivileges`, `PrivateTmp`, `ProtectSystem=strict`, `ProtectHome`, `ReadWritePaths`) and explicit outbound/network permissions.
 - Keep backups encrypted, access-controlled, tested for restore, and outside the source tree. Publish checksums/signatures only; exclude binaries and build output from commits.
-- Desktop/mobile clients may store EVE SSO tokens only in OS secure storage. The Server, mobile clients, telemetry, and models must never receive those tokens.
+- Desktop/mobile clients store Alice session credentials in OS secure storage and never receive EVE access/refresh tokens. After explicit authorization, the Server may encrypt an EVE refresh grant with the deployment keyring for background read-only ESI sync; EVE access tokens remain memory-only, and no EVE token may enter frontend/mobile/model/telemetry/log output.
 
 ## Incident response
 

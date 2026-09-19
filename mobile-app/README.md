@@ -4,7 +4,7 @@ Flutter mobile companion for the EVE Assistant desktop app.
 
 ## Implemented server flow
 
-- **Device pairing:** enter the six-digit code created by the desktop/server at `POST /api/v1/pair/confirm`. The returned device token and device id are kept in the in-memory API client for this session.
+- **Device authorization:** the current UI calls `POST /api/v1/auth/device/start` and `/complete`. Returned device/access/refresh credentials are persisted with `FlutterSecureStorage`; six-digit `/pair` and `/pair/confirm` remain deprecated compatibility methods and are not exposed in the UI.
 - **REST backlog:** after pairing, `GET /api/v1/alerts` retrieves the mobile device's saved event backlog. Requests include both `Authorization: Bearer <device token>` and `X-Device-Id`/`deviceId`; optional `cursor` and `limit` parameters are supported.
 - **Protocol models:** `MessageEnvelope` accepts the canonical protocol fields (`version`, `messageId`, `createdAt`) and the compact wire fields currently emitted by the Go server (`v`, `id`, `ts`). Alert payloads include event id, severity, source, system, observed/expiry times, and evidence count.
 - **ACK:** confirming an alert posts `ackMessageId`, `status: accepted`, `stage: received`, `receivedAt`, and the compatibility `id` to `POST /api/v1/messages/ack`.
@@ -25,9 +25,9 @@ Flutter mobile companion for the EVE Assistant desktop app.
 | OPPO PUSH | Add the OPPO/Heytap SDK in an OPPO-enabled build flavor and map callbacks to the common adapter. | `INTERNET`; `POST_NOTIFICATIONS` on Android 13+; ColorOS channel and background delivery policy review. |
 | vivo Push | Add the vivo SDK in a vivo-enabled build flavor and map callbacks to the common adapter. | `INTERNET`; `POST_NOTIFICATIONS` on Android 13+; vivo service registration and vendor delivery policy review. |
 
-All five providers share the same notification routes (`intel.alert`, `market.alert`, `conversation.update`, or `general`). Provider-specific SDK initialization, credentials, app IDs, registration tokens, and vendor manifest metadata must be supplied by the consuming app/build flavor. This repository intentionally contains none of those values. `PushProviderRegistry` reports the permissions that an adapter should document; it does not request vendor permissions or initialize an SDK.
+All five providers share the same notification routes (`intel.alert`, `market.alert`, `conversation.update`, or `general`). Provider-specific credentials, app IDs, registration tokens and vendor metadata are deployment/build-flavor inputs. The current FCM build uses an ignored local `android/app/google-services.json`; it must remain untracked, and no raw token or provider secret may be committed. `PushProviderRegistry` documents permissions only and does not initialize optional vendor SDKs.
 
-The current server also exposes an SSE endpoint (`GET /api/v1/events`), but the MVP client intentionally uses REST backlog first. A streaming package can be added once the server's SSE/WSS authentication and lifecycle contract is stable; no Firebase dependency is required for foreground synchronization. The historical Relay wording in client compatibility identifiers is retained where required.
+The server exposes deprecated SSE at `GET /api/v1/events` and WSS at `/api/v1/realtime`. `ConversationClient` implements WSS with `/api/v1/sync` gap recovery, while alert refresh uses REST backlog; the Agent page has not yet wired the conversation realtime client. No Firebase dependency is required for foreground synchronization.
 
 ## Directory
 

@@ -14,7 +14,7 @@ managed PostgreSQL (private network, TLS verification)
 
 1. Copy `relay-server/config/production.env.example` to an untracked, root-readable environment file or inject variables from a secret manager.
 2. Replace every placeholder with environment-specific values. Use an operator-owned HTTPS origin; do not commit it.
-3. Run PostgreSQL migrations using a temporary migration role, then run the service with a dedicated least-privileged runtime role.
+3. Choose a migration mode: the default `MIGRATIONS_MODE=apply` acquires an advisory lock, verifies checksums and applies embedded migrations using `DATABASE_URL` before the listener opens. If a temporary migration role runs the same runner separately, start the runtime role with `MIGRATIONS_MODE=off`.
 4. Terminate TLS at the reverse proxy, enforce HTTPS, strict CORS/Origin policy, request limits, rate limits, and proxy header sanitization.
 5. Bind the Server to loopback/private networking. Permit database access only from the Server identity/security group.
 6. Run `scripts/security-audit.ps1 -IncludeIgnored` (and repository history secret scanning) before creating a public commit or release.

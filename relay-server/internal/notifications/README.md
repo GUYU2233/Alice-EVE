@@ -8,14 +8,14 @@
 - Provider-neutral `Dispatcher`/`Delivery` interfaces are intentionally adapter-only. Dispatch returns `ErrProviderNotConfigured` until a provider adapter is explicitly registered; no vendor send is faked.
 - Idempotent token registration (same device/provider/token updates the existing record) and owner-scoped revocation.
 
-HTTP routes are authenticated by the paired mobile device token:
+Preferences and token routes require paired mobile authentication; the provider catalog is public capability metadata:
 
 - `GET /api/v1/notifications/preferences`
 - `PUT /api/v1/notifications/preferences` body `{preferences, baseVersion, ifMatch}`
 - `GET /api/v1/notifications/providers` (provider metadata and configured state)
 - `GET/POST/DELETE /api/v1/notifications/tokens` (`DELETE` takes query `id`)
 
-The current service is in-memory so tests and the MVP server do not require Firebase credentials. The SQL migration (`009_notifications.sql`) defines the durable shape for a PostgreSQL repository.
+The in-memory repository is used for tests/local mode; PostgreSQL-backed servers wire the durable repository. Migrations `009_notifications.sql` and `010_notification_providers.sql` define the durable preference/token/provider shape.
 
 ## FCM production boundary
 

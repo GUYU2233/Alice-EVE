@@ -20,7 +20,7 @@ shared/protocol/
 
 ## 约定
 
-1. JSON Schema/OpenAPI 是唯一真源，禁止手工维护跨语言模型的不同字段定义。
+1. 当前 JSON Schema/OpenAPI 是兼容草案；实际实现包含短字段 Envelope 和端点 DTO。完成路由/字段对齐、固定生成工具和 round-trip CI 后，才能升级为唯一真源。
 2. `protocol.md` 记录语义、状态机、安全和兼容策略。
 3. 新增字段必须可选且保持旧客户端可解析；破坏性变更提升主版本。
 4. 生成 Go、TypeScript、Dart 模型后，CI 执行示例解析和跨语言 round-trip 测试。
@@ -29,4 +29,4 @@ shared/protocol/
 
 ## 当前状态
 
-已补充 `envelope.schema.json`、`messages.schema.json`、`pairing.schema.json`、`errors.schema.json` 和 `openapi.yaml`。协议正文见 [`docs/protocol.md`](../../docs/protocol.md)。下一步补充生成脚本，然后生成 Go/TypeScript/Dart DTO。
+已补充 `envelope.schema.json`、`messages.schema.json`、`pairing.schema.json`、`errors.schema.json` 和 `openapi.yaml`。协议正文见 [`docs/protocol.md`](../../docs/protocol.md)。Schema 仍主要描述兼容消息，Go/TypeScript/Dart 业务 DTO 仍有手写实现；下一步先对齐实际 API，再补生成脚本和跨语言 round-trip 测试。

@@ -7,7 +7,7 @@ Go 服务端，负责账户/设备安全通信、EVE SSO 与只读 ESI 同步、
 ## Server API
 
 - `GET /health`：健康检查
-- `POST /api/v1/pair`：生成临时六位配对码（占位实现）
+- `POST /api/v1/pair`：生成 5 分钟有效的一次性六位配对码（旧兼容入口）
 - `POST /api/v1/pair/confirm`：消费配对码并返回设备凭证（旧兼容入口）
 - `POST /api/v1/auth/device/start`：创建 5 分钟一次性设备授权挑战（不需要配对码）；默认拒绝客户端提供的任意 `provider/subject`。生产环境必须使用已认证 access token 提交匹配的 `accountId`；仅开发/测试可显式设置 `ALLOW_UNVERIFIED_DEVICE_AUTH=1`（或 `true`）开启匿名 identity bootstrap，严禁生产使用。
 - `POST /api/v1/auth/device/complete`：消费挑战，按账号身份签发短期 access 与轮换 refresh token。错误响应统一为 `{ "error": { "code": "...", "message": "..." } }`，客户端应按 `code` 处理 `identity_required`、`invalid_challenge` 等安全错误。
@@ -36,7 +36,7 @@ Content-Type: application/json
 
 `internal/auth` 提供服务端侧可复用的 OAuth 2.0 Authorization Code + PKCE（S256）基础组件：
 
-- `OAuthConfig` 配置授权、token、userinfo 端点、公开 client ID、固定 HTTPS redirect URI 和最小 scope；服务端不接收 client secret。
+- `OAuthConfig` 配置授权、token、userinfo 端点、client ID、固定 HTTPS redirect URI 和最小 scope；机密客户端可使用部署侧注入的 ClientCredential，仅作为 token 端点 HTTP Basic 密码。
 - `POST /api/v1/auth/sso/start` 接收客户端生成的 PKCE challenge，生成随机 state 并绑定固定 redirect/device 元数据；verifier 只由桌面端安全保存。
 - `GET /api/v1/auth/sso/start` 是浏览器 flow：服务端生成 PKCE verifier/nonce，state 绑定服务端保存的 verifier、nonce 和 `__Host-eve-oauth` cookie；cookie 为 `Secure; HttpOnly; SameSite=Lax; Path=/`，回调成功或失败都会清除。
 - `GET /api/v1/auth/sso/callback` 只接受匹配 state/cookie，失败统一返回 `401 oauth_invalid`；成功只重定向到配置的精确 `EVE_SSO_DEEP_LINK_URI`；未配置时显示不含凭证的完成页，不回跳 callback URI，且不把 code/state/token 放入 redirect。
@@ -49,7 +49,7 @@ Content-Type: application/json
 - `POST /api/v1/trade/candidates/search`：按预算、货舱、安全和收益约束查询全品类候选。
 - `POST /api/v1/trade/plans/compose`：在固定起终点路线内组合多物品装载。
 - `POST /api/v1/trade/plans/chain`：生成沿途取货/交付的链式计划。
-- `GET /api/v1/trade/routes`：单条最短安全路线。
+- `GET /api/v1/trade/routes`：单条最短安全路线；无合规路线返回 404 `route_not_found`。
 - `POST /api/v1/trade/routes`：最多 500 条批量路线，保持输入顺序；不可达项返回 `unavailable`。
 
 路线模块位于 `internal/routeplanner`。它按 active SDE build 缓存不可变星门图，并使用包含 SDE version 和完整路线约束的有界结果缓存。旧的 PostgreSQL 递归路线查询已经移除。
