@@ -1,6 +1,7 @@
 package trade
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -649,6 +650,9 @@ type deliveryBeamState struct {
 // SearchPickupDeliveryPlans expands real station visits and re-simulates cash,
 // inventory and cargo at every step. Only realized delivery profit is scored.
 func SearchPickupDeliveryPlans(start Hub, routes []Route, candidates []Candidate, c Constraint) ([]PickupDeliveryPlan, error) {
+	return SearchPickupDeliveryPlansContext(context.Background(), start, routes, candidates, c)
+}
+func SearchPickupDeliveryPlansContext(ctx context.Context, start Hub, routes []Route, candidates []Candidate, c Constraint) ([]PickupDeliveryPlan, error) {
 	c, err := normalizedConstraint(c)
 	if err != nil {
 		return nil, err
@@ -658,8 +662,14 @@ func SearchPickupDeliveryPlans(start Hub, routes []Route, candidates []Candidate
 	for depth := 0; depth < c.MaxStops-1; depth++ {
 		var next []deliveryBeamState
 		for _, s := range beam {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			at := s.visits[len(s.visits)-1]
 			for _, r := range routes {
+				if err := ctx.Err(); err != nil {
+					return nil, err
+				}
 				if r.From.StationID != at.StationID || r.To.StationID == at.StationID || r.MinSecurity < c.MinSecurity {
 					continue
 				}

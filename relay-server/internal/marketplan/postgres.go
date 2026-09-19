@@ -41,8 +41,28 @@ func nonNilIDs(ids []int64) []int64 {
 }
 func (r *PostgresRepository) Create(ctx context.Context, account string, q CreateRequest, hash string) (Job, error) {
 	c, _ := json.Marshal(q.Constraints)
-	row := r.pool.QueryRow(ctx, `INSERT INTO market_plan_jobs(id,account_id,character_id,mode,source_region_ids,destination_scope,destination_region_ids,constraints,constraint_hash) VALUES(gen_random_uuid(),$1::uuid,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(account_id,character_id,mode,constraint_hash) WHERE state IN ('queued','discovering','routing','optimizing','watching') DO UPDATE SET updated_at=now() RETURNING `+jobColumns, account, q.CharacterID, q.Mode, q.SourceRegionIDs, q.DestinationScope, nonNilIDs(q.DestinationRegionIDs), c, hash)
-	return scanJob(row)
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return Job{}, err
+	}
+	defer tx.Rollback(ctx)
+	// A workspace has exactly one live plan per account/character/mode. Without
+	// superseding older constraints, every historic plan watches every snapshot
+	// forever and multiplies expensive BASKET/CHAIN work.
+	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::text||':'||$2::text||':'||$3::text,0))`, account, q.CharacterID, q.Mode); err != nil {
+		return Job{}, err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE market_plan_jobs SET state='cancelled',worker_token=NULL,lease_until=NULL,completed_at=now(),updated_at=now() WHERE account_id=$1::uuid AND character_id=$2 AND mode=$3 AND state IN ('queued','discovering','routing','optimizing','watching')`, account, q.CharacterID, q.Mode); err != nil {
+		return Job{}, err
+	}
+	job, err := scanJob(tx.QueryRow(ctx, `INSERT INTO market_plan_jobs(id,account_id,character_id,mode,source_region_ids,destination_scope,destination_region_ids,constraints,constraint_hash) VALUES(gen_random_uuid(),$1::uuid,$2,$3,$4,$5,$6,$7,$8) RETURNING `+jobColumns, account, q.CharacterID, q.Mode, q.SourceRegionIDs, q.DestinationScope, nonNilIDs(q.DestinationRegionIDs), c, hash))
+	if err != nil {
+		return Job{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return Job{}, err
+	}
+	return job, nil
 }
 func (r *PostgresRepository) Get(ctx context.Context, account, id string) (Job, error) {
 	j, e := scanJob(r.pool.QueryRow(ctx, `SELECT `+jobColumns+` FROM market_plan_jobs WHERE id=$1::uuid AND account_id=$2::uuid`, id, account))

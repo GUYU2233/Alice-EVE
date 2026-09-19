@@ -25,7 +25,11 @@ func (e PlanningEngine) Step(ctx context.Context, j Job) (Commit, error) {
 	if e.Candidates == nil || e.Routes == nil {
 		return Commit{}, fmt.Errorf("planning dependencies unavailable")
 	}
-	page, err := e.Candidates.SearchCandidates(ctx, marketdata.CandidateSearch{SourceRegionIDs: j.SourceRegionIDs, DestinationRegionIDs: j.DestinationRegionIDs, DestinationScope: j.DestinationScope, PerTypeLocations: 8, Budget: j.Constraints.Budget - j.Constraints.BudgetReserve, CargoM3: j.Constraints.CargoM3, SalesTaxRate: .036, MinSecurity: j.Constraints.MinSecurity, MaxJumps: j.Constraints.MaxJumps, IncludeDepth: j.Mode != "single", Limit: 500})
+	limit, perType := 500, 8
+	if j.Mode == "chain" {
+		limit, perType = 120, 3
+	}
+	page, err := e.Candidates.SearchCandidates(ctx, marketdata.CandidateSearch{SourceRegionIDs: j.SourceRegionIDs, DestinationRegionIDs: j.DestinationRegionIDs, DestinationScope: j.DestinationScope, PerTypeLocations: perType, Budget: j.Constraints.Budget - j.Constraints.BudgetReserve, CargoM3: j.Constraints.CargoM3, SalesTaxRate: .036, MinSecurity: j.Constraints.MinSecurity, MaxJumps: j.Constraints.MaxJumps, IncludeDepth: j.Mode != "single", Limit: limit})
 	if err != nil {
 		return Commit{}, err
 	}
@@ -73,6 +77,9 @@ func (e PlanningEngine) Step(ctx context.Context, j Job) (Commit, error) {
 		}
 	}
 	constraint := trade.Constraint{Budget: j.Constraints.Budget, BudgetReserve: j.Constraints.BudgetReserve, CargoM3: j.Constraints.CargoM3, MaxItemConcentration: .25, TargetLoadFactor: j.Constraints.TargetLoadFactor, MinSecurity: j.Constraints.MinSecurity, MaxStops: 4, MaxLegs: 3, BeamWidth: 48, MaxItemsPerLeg: 32, JumpPenalty: 0, StopPenalty: 0, OptimizationStates: 1024}
+	if j.Mode == "chain" {
+		constraint.BeamWidth, constraint.MaxItemsPerLeg, constraint.OptimizationStates = 12, 8, 192
+	}
 	out := single
 	if j.Mode == "basket" {
 		plans, e2 := trade.PackByRoute(cs, constraint, 50)
@@ -99,7 +106,7 @@ func (e PlanningEngine) Step(ctx context.Context, j Job) (Commit, error) {
 			}
 			edges = append(edges, trade.Route{From: c.From, To: c.To, Jumps: r.Jumps, MinSecurity: r.MinSecurity, Systems: systems})
 		}
-		plans, e2 := trade.SearchPickupDeliveryPlans(cs[0].From, edges, cs, constraint)
+		plans, e2 := trade.SearchPickupDeliveryPlansContext(ctx, cs[0].From, edges, cs, constraint)
 		if e2 != nil {
 			return Commit{}, e2
 		}

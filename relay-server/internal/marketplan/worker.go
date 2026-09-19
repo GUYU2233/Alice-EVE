@@ -119,15 +119,17 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 			defer cancel()
 			commit, err := w.engine.Step(stepCtx, claim.Job)
 			now := time.Now().UTC()
+			persistCtx, persistCancel := context.WithTimeout(ctx, 5*time.Second)
+			defer persistCancel()
 			if err != nil {
-				if failErr := w.repo.Fail(ctx, claim, err.Error(), now); failErr != nil {
+				if failErr := w.repo.Fail(persistCtx, claim, err.Error(), now); failErr != nil {
 					log.Printf("market plan job fail persistence failed job=%s: step=%v persist=%v", claim.Job.ID, err, failErr)
 				} else {
 					log.Printf("market plan job step failed job=%s: %v", claim.Job.ID, err)
 				}
 				return
 			}
-			if _, commitErr := w.repo.Commit(ctx, claim, commit, now); commitErr != nil {
+			if _, commitErr := w.repo.Commit(persistCtx, claim, commit, now); commitErr != nil {
 				log.Printf("market plan job commit failed job=%s: %v", claim.Job.ID, commitErr)
 			}
 		}()
