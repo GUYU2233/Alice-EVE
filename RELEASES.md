@@ -1,29 +1,18 @@
-# Releases
+# Alice-EVE 发布约定
 
-本目录整理当前仓库中已存在的发布产物。扫描范围排除了构建缓存、依赖目录和版本控制目录。
+构建产物使用固定名称并由新构建直接覆盖：
 
-## Desktop App
+```text
+releases/Alice-EVE-Desktop.exe
+releases/Alice-EVE-Mobile.apk
+```
 
-当前工作区 `releases/` 目录存在以下（被 `.gitignore` 排除、未纳入 Git 对象）产物：
+安装后的产品显示名统一为 `AliceEVE`。Android 更新必须保持 `com.aliceeve.mobile`、相同 release 签名并递增 build number。
 
-- `releases/eve-assistant-v0.0.1-alpha.exe`
-- `releases/eve-assistant-v0.0.1-alpha.zip`
+统一构建：
 
-## Mobile
+```powershell
+./scripts/build-release.ps1
+```
 
-当前工作区 `releases/` 目录存在以下（被 `.gitignore` 排除、未纳入 Git 对象）产物：
-
-- `releases/eve-assistant-mobile-android-v0.0.1-alpha.apk`
-- `releases/eve-assistant-mobile-windows.zip`
-
-## Other Existing Binary
-
-历史提交曾包含 `relay-server/relay-linux`、`relay-server/relay-prod`、`relay-server/relay-server/bin/relay-server` 和 `relay-server/relay-server/relay-server.exe`；这些旧服务端二进制不属于客户端发布产物，且当前命名 refs 已不再包含它们。
-
-## Latest verified local desktop build
-
-当前源码已验证可生成 `desktop-app/build/bin/eve-assistant.exe`。该文件位于被忽略的 `build/` 目录，本次源码提交不会上传 EXE；发布摘要应由正式发布流水线单独生成。
-
-## Checksums
-
-`releases/SHA256SUMS.txt` 是当前跟踪的历史发布清单；清单中的文件名相对于 `releases/` 目录解析。产物本身被忽略，不应据此声称它们已经提交到 Git 或上传到远端。
+也可使用 `-DesktopOnly` 或 `-MobileOnly`；二者互斥。发布二进制由 `.gitignore` 排除，不提交源码仓库。每次发布记录 SHA-256；移动 release 必须由 Secret Manager/CI 注入正式签名，不允许 debug key。

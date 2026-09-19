@@ -3,6 +3,7 @@ param(
     [switch]$MobileOnly
 )
 $ErrorActionPreference = 'Stop'
+if ($DesktopOnly -and $MobileOnly) { throw 'DesktopOnly and MobileOnly are mutually exclusive.' }
 $root = Split-Path -Parent $PSScriptRoot
 $releaseDir = Join-Path $root 'releases'
 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null

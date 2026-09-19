@@ -12,7 +12,7 @@ Go 服务端启动时校验并应用 `relay-server/migrations/`。主要领域�
 - `esidata` / `esisync` / `esipublic`：角色快照、后台同步和公共 ESI 缓存。
 - `marketdata`：区域采集调度、原子市场快照和候选查询。
 - `routeplanner`：active SDE 星门图、安全约束路线和有界缓存。
-- `marketplan`：持久化规划任务、Worker 租约、增量结果和 frontier。
+- `marketplan`：持久化规划任务、Worker 租约与 revision 化结果；frontier 表保留用于后续切片续算，目前不作为已实现能力。
 - `realtime` / `notifications` / `conversations`：WSS、补偿同步、通知和对话事件。
 
 ## 持久化市场规划
@@ -30,7 +30,7 @@ Go 服务端启动时校验并应用 `relay-server/migrations/`。主要领域�
 
 - `market_plan_jobs`：约束、状态、租约、iteration 和 result revision。
 - `market_plan_results`：按 revision/rank 保存 canonical payload。
-- `market_plan_frontiers`：保存后续增量优化所需 frontier。
+- `market_plan_frontiers`：为后续切片续算预留；当前引擎每次按最新快照执行一次完整有界计算。
 
 Worker 使用 `FOR UPDATE SKIP LOCKED` 和 token/lease fencing 并发领取。状态为：
 

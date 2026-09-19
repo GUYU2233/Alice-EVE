@@ -3,6 +3,7 @@ package marketplan
 import (
 	"context"
 	"errors"
+	"log"
 	"sync"
 	"time"
 )
@@ -80,7 +81,9 @@ func (w *Worker) Start(parent context.Context) {
 		ticker := time.NewTicker(w.cfg.PollInterval)
 		defer ticker.Stop()
 		for {
-			_ = w.RunOnce(ctx)
+			if err := w.RunOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				log.Printf("market plan worker cycle failed: %v", err)
+			}
 			select {
 			case <-ctx.Done():
 				return
@@ -117,10 +120,16 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 			commit, err := w.engine.Step(stepCtx, claim.Job)
 			now := time.Now().UTC()
 			if err != nil {
-				_ = w.repo.Fail(ctx, claim, err.Error(), now)
+				if failErr := w.repo.Fail(ctx, claim, err.Error(), now); failErr != nil {
+					log.Printf("market plan job fail persistence failed job=%s: step=%v persist=%v", claim.Job.ID, err, failErr)
+				} else {
+					log.Printf("market plan job step failed job=%s: %v", claim.Job.ID, err)
+				}
 				return
 			}
-			_, _ = w.repo.Commit(ctx, claim, commit, now)
+			if _, commitErr := w.repo.Commit(ctx, claim, commit, now); commitErr != nil {
+				log.Printf("market plan job commit failed job=%s: %v", claim.Job.ID, commitErr)
+			}
 		}()
 	}
 	wg.Wait()
