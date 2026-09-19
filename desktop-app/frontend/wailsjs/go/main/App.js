@@ -18,6 +18,10 @@ export function CancelAgentRun(arg1, arg2) {
   return window['go']['main']['App']['CancelAgentRun'](arg1, arg2);
 }
 
+export function CancelEVEMarketPlanJob(arg1) {
+  return window['go']['main']['App']['CancelEVEMarketPlanJob'](arg1);
+}
+
 export function ChainEVETradePlans(arg1) {
   return window['go']['main']['App']['ChainEVETradePlans'](arg1);
 }
@@ -52,6 +56,10 @@ export function ComposeEVETradePlan(arg1) {
 
 export function ConfirmPairing(arg1) {
   return window['go']['main']['App']['ConfirmPairing'](arg1);
+}
+
+export function CreateEVEMarketPlanJob(arg1) {
+  return window['go']['main']['App']['CreateEVEMarketPlanJob'](arg1);
 }
 
 export function FetchAlerts(arg1, arg2) {
@@ -116,6 +124,14 @@ export function FetchEVEMarketHistory(arg1, arg2) {
 
 export function FetchEVEMarketOrders(arg1, arg2, arg3) {
   return window['go']['main']['App']['FetchEVEMarketOrders'](arg1, arg2, arg3);
+}
+
+export function FetchEVEMarketPlanJob(arg1) {
+  return window['go']['main']['App']['FetchEVEMarketPlanJob'](arg1);
+}
+
+export function FetchEVEMarketPlanResults(arg1, arg2) {
+  return window['go']['main']['App']['FetchEVEMarketPlanResults'](arg1, arg2);
 }
 
 export function FetchEVEMarketPrices() {

@@ -26,6 +26,7 @@ import (
 	"relay-server/internal/evegrant"
 	"relay-server/internal/httpapi"
 	"relay-server/internal/marketdata"
+	"relay-server/internal/marketplan"
 	"relay-server/internal/notifications"
 	"relay-server/internal/realtime"
 	"relay-server/internal/routeplanner"
@@ -70,6 +71,8 @@ type Server struct {
 	marketScheduler  *marketdata.Scheduler
 	routePlanner     routeRouter
 	candidateRepo    marketdata.CandidateRepository
+	marketPlanJobs   marketplan.Repository
+	marketPlanWorker *marketplan.Worker
 	esiWorker        *esisync.Worker
 	esiJobs          esisync.JobRepository
 	accountRepo      accounts.AccountRepository
@@ -216,6 +219,15 @@ func NewServer(st ...store.Store) *Server {
 				s.marketRepo = repo
 				s.routePlanner = routeplanner.New(routeplanner.PostgresLoader{Pool: pg.Pool}, 10*time.Minute)
 				s.candidateRepo = repo
+				if jobs, jobsErr := marketplan.NewPostgresRepository(pg.Pool); jobsErr == nil {
+					s.marketPlanJobs = jobs
+					engine := marketplan.PlanningEngine{Candidates: repo, Routes: s.routePlanner}
+					workers := envPositiveInt("MARKET_PLAN_WORKERS", 4)
+					if worker, workerErr := marketplan.NewWorker(jobs, engine, marketplan.WorkerConfig{Concurrency: workers, BatchSize: workers * 2}); workerErr == nil {
+						s.marketPlanWorker = worker
+						worker.Start(context.Background())
+					}
+				}
 				maxRegions := envPositiveInt("MARKET_MAX_ACTIVE_REGIONS", marketdata.DefaultSchedulerMaxRegions)
 				if scheduler, schedulerErr := marketdata.NewScheduler(repo, s.marketCollector, marketdata.SchedulerConfig{MaxRegions: maxRegions}); schedulerErr == nil {
 					s.marketScheduler = scheduler
@@ -286,6 +298,8 @@ func NewServer(st ...store.Store) *Server {
 	s.mux.HandleFunc("/api/v1/trade/routes", s.tradeRoute)
 	s.mux.HandleFunc("/api/v1/trade/candidates/search", s.tradeCandidateSearch)
 	s.mux.HandleFunc("/api/v1/trade/plans/", s.tradePlanner)
+	s.mux.HandleFunc("/api/v1/trade/plan-jobs", s.tradePlanJobs)
+	s.mux.HandleFunc("/api/v1/trade/plan-jobs/", s.tradePlanJobs)
 	s.mux.HandleFunc("/api/v1/pair", s.pair)
 	s.mux.HandleFunc("/api/v1/pair/confirm", s.confirmPair)
 	s.mux.HandleFunc("/api/v1/events", s.eventsStream)
@@ -315,6 +329,9 @@ func NewServer(st ...store.Store) *Server {
 func (s *Server) Close() error {
 	if s == nil {
 		return nil
+	}
+	if s.marketPlanWorker != nil {
+		s.marketPlanWorker.Close()
 	}
 	if s.marketScheduler != nil {
 		s.marketScheduler.Close()

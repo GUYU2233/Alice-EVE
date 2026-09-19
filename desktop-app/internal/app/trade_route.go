@@ -116,7 +116,9 @@ func (r *RelayClient) SecureTradeRoutes(ctx context.Context, queries []TradeRout
 	}
 	for i, v := range response.Routes {
 		q := missing[i]
-		r.routeCache.put(q, v)
+		if v.Status == "ready" {
+			r.routeCache.put(q, v)
+		}
 		for _, p := range positions[routeKey(q)] {
 			out[p] = v
 		}

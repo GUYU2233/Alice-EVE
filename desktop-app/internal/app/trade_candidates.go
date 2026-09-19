@@ -7,18 +7,22 @@ import (
 )
 
 type TradeCandidateSearch struct {
-	RegionIDs     []int64 `json:"regionIds"`
-	Budget        float64 `json:"budget"`
-	CargoM3       float64 `json:"cargoM3"`
-	SalesTaxRate  float64 `json:"salesTaxRate"`
-	BrokerRate    float64 `json:"brokerRate"`
-	MinProfit     float64 `json:"minProfit"`
-	MinProfitRate float64 `json:"minProfitRate"`
-	MinSecurity   float64 `json:"minSecurity"`
-	MaxJumps      int     `json:"maxJumps"`
-	IncludeDepth  bool    `json:"includeDepth"`
-	Limit         int     `json:"limit"`
-	Offset        int     `json:"offset"`
+	RegionIDs            []int64 `json:"regionIds,omitempty"`
+	SourceRegionIDs      []int64 `json:"sourceRegionIds,omitempty"`
+	DestinationRegionIDs []int64 `json:"destinationRegionIds,omitempty"`
+	DestinationScope     string  `json:"destinationScope,omitempty"`
+	PerTypeLocations     int     `json:"perTypeLocations,omitempty"`
+	Budget               float64 `json:"budget"`
+	CargoM3              float64 `json:"cargoM3"`
+	SalesTaxRate         float64 `json:"salesTaxRate"`
+	BrokerRate           float64 `json:"brokerRate"`
+	MinProfit            float64 `json:"minProfit"`
+	MinProfitRate        float64 `json:"minProfitRate"`
+	MinSecurity          float64 `json:"minSecurity"`
+	MaxJumps             int     `json:"maxJumps"`
+	IncludeDepth         bool    `json:"includeDepth"`
+	Limit                int     `json:"limit"`
+	Offset               int     `json:"offset"`
 }
 type TradeDepthLevel struct {
 	Price            float64 `json:"price"`

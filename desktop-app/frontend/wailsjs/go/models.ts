@@ -1186,6 +1186,174 @@ export namespace app {
 		    return a;
 		}
 	}
+	export class MarketPlanConstraints {
+	    budget: number;
+	    budgetReserve: number;
+	    cargoM3: number;
+	    minSecurity: number;
+	    maxJumps: number;
+	    targetLoadFactor: number;
+
+	    static createFrom(source: any = {}) {
+	        return new MarketPlanConstraints(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.budget = source["budget"];
+	        this.budgetReserve = source["budgetReserve"];
+	        this.cargoM3 = source["cargoM3"];
+	        this.minSecurity = source["minSecurity"];
+	        this.maxJumps = source["maxJumps"];
+	        this.targetLoadFactor = source["targetLoadFactor"];
+	    }
+	}
+	export class MarketPlanJob {
+	    id: string;
+	    mode: string;
+	    state: string;
+	    sourceRegionIds: number[];
+	    destinationScope: string;
+	    destinationRegionIds: number[];
+	    constraints: MarketPlanConstraints;
+	    progress: number[];
+	    iteration: number;
+	    resultRevision: number;
+	    lastError: string;
+	    createdAt: string;
+	    updatedAt: string;
+
+	    static createFrom(source: any = {}) {
+	        return new MarketPlanJob(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.mode = source["mode"];
+	        this.state = source["state"];
+	        this.sourceRegionIds = source["sourceRegionIds"];
+	        this.destinationScope = source["destinationScope"];
+	        this.destinationRegionIds = source["destinationRegionIds"];
+	        this.constraints = this.convertValues(source["constraints"], MarketPlanConstraints);
+	        this.progress = source["progress"];
+	        this.iteration = source["iteration"];
+	        this.resultRevision = source["resultRevision"];
+	        this.lastError = source["lastError"];
+	        this.createdAt = source["createdAt"];
+	        this.updatedAt = source["updatedAt"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class MarketPlanJobRequest {
+	    characterId: number;
+	    mode: string;
+	    sourceRegionIds: number[];
+	    destinationScope: string;
+	    destinationRegionIds?: number[];
+	    constraints: MarketPlanConstraints;
+
+	    static createFrom(source: any = {}) {
+	        return new MarketPlanJobRequest(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.characterId = source["characterId"];
+	        this.mode = source["mode"];
+	        this.sourceRegionIds = source["sourceRegionIds"];
+	        this.destinationScope = source["destinationScope"];
+	        this.destinationRegionIds = source["destinationRegionIds"];
+	        this.constraints = this.convertValues(source["constraints"], MarketPlanConstraints);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class MarketPlanResult {
+	    revision: number;
+	    rank: number;
+	    stableKey: string;
+	    score: number;
+	    payload: Record<string, any>;
+	    createdAt: string;
+
+	    static createFrom(source: any = {}) {
+	        return new MarketPlanResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.revision = source["revision"];
+	        this.rank = source["rank"];
+	        this.stableKey = source["stableKey"];
+	        this.score = source["score"];
+	        this.payload = source["payload"];
+	        this.createdAt = source["createdAt"];
+	    }
+	}
+	export class MarketPlanResultPage {
+	    items: MarketPlanResult[];
+
+	    static createFrom(source: any = {}) {
+	        return new MarketPlanResultPage(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.items = this.convertValues(source["items"], MarketPlanResult);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 
 	export class RealtimeEvent {
 	    id: string;
@@ -1361,7 +1529,11 @@ export namespace app {
 		}
 	}
 	export class TradeCandidateSearch {
-	    regionIds: number[];
+	    regionIds?: number[];
+	    sourceRegionIds?: number[];
+	    destinationRegionIds?: number[];
+	    destinationScope?: string;
+	    perTypeLocations?: number;
 	    budget: number;
 	    cargoM3: number;
 	    salesTaxRate: number;
@@ -1381,6 +1553,10 @@ export namespace app {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.regionIds = source["regionIds"];
+	        this.sourceRegionIds = source["sourceRegionIds"];
+	        this.destinationRegionIds = source["destinationRegionIds"];
+	        this.destinationScope = source["destinationScope"];
+	        this.perTypeLocations = source["perTypeLocations"];
 	        this.budget = source["budget"];
 	        this.cargoM3 = source["cargoM3"];
 	        this.salesTaxRate = source["salesTaxRate"];
@@ -1393,6 +1569,70 @@ export namespace app {
 	        this.limit = source["limit"];
 	        this.offset = source["offset"];
 	    }
+	}
+	export class TradeLoadItem {
+	    typeId: number;
+	    quantity: number;
+	    unitVolume: number;
+	    unitCost: number;
+	    unitReturn: number;
+	    capital: number;
+	    volumeM3: number;
+	    netProfit: number;
+	    score: number;
+	    confidence: number;
+
+	    static createFrom(source: any = {}) {
+	        return new TradeLoadItem(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.typeId = source["typeId"];
+	        this.quantity = source["quantity"];
+	        this.unitVolume = source["unitVolume"];
+	        this.unitCost = source["unitCost"];
+	        this.unitReturn = source["unitReturn"];
+	        this.capital = source["capital"];
+	        this.volumeM3 = source["volumeM3"];
+	        this.netProfit = source["netProfit"];
+	        this.score = source["score"];
+	        this.confidence = source["confidence"];
+	    }
+	}
+	export class TradeCargoLot {
+	    item: TradeLoadItem;
+	    from: EVETradeHub;
+	    to: EVETradeHub;
+
+	    static createFrom(source: any = {}) {
+	        return new TradeCargoLot(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.item = this.convertValues(source["item"], TradeLoadItem);
+	        this.from = this.convertValues(source["from"], EVETradeHub);
+	        this.to = this.convertValues(source["to"], EVETradeHub);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class TradeConstraint {
 	    budget: number;
@@ -1408,6 +1648,7 @@ export namespace app {
 	    jumpPenalty: number;
 	    stopPenalty: number;
 	    optimizationStates: number;
+	    targetLoadFactor: number;
 
 	    static createFrom(source: any = {}) {
 	        return new TradeConstraint(source);
@@ -1428,6 +1669,7 @@ export namespace app {
 	        this.jumpPenalty = source["jumpPenalty"];
 	        this.stopPenalty = source["stopPenalty"];
 	        this.optimizationStates = source["optimizationStates"];
+	        this.targetLoadFactor = source["targetLoadFactor"];
 	    }
 	}
 	export class TradeChainRequest {
@@ -1468,8 +1710,109 @@ export namespace app {
 		    return a;
 		}
 	}
+	export class TradeChainStop {
+	    hub: EVETradeHub;
+	    loads?: TradeCargoLot[];
+	    unloads?: TradeCargoLot[];
+	    cashBefore: number;
+	    saleRevenue: number;
+	    purchaseCost: number;
+	    cashAfter: number;
+	    cargoBeforeM3: number;
+	    unloadedM3: number;
+	    loadedM3: number;
+	    cargoAfterM3: number;
+
+	    static createFrom(source: any = {}) {
+	        return new TradeChainStop(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.hub = this.convertValues(source["hub"], EVETradeHub);
+	        this.loads = this.convertValues(source["loads"], TradeCargoLot);
+	        this.unloads = this.convertValues(source["unloads"], TradeCargoLot);
+	        this.cashBefore = source["cashBefore"];
+	        this.saleRevenue = source["saleRevenue"];
+	        this.purchaseCost = source["purchaseCost"];
+	        this.cashAfter = source["cashAfter"];
+	        this.cargoBeforeM3 = source["cargoBeforeM3"];
+	        this.unloadedM3 = source["unloadedM3"];
+	        this.loadedM3 = source["loadedM3"];
+	        this.cargoAfterM3 = source["cargoAfterM3"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 
 
+
+	export class TradePackPlan {
+	    from: EVETradeHub;
+	    to: EVETradeHub;
+	    items: TradeLoadItem[];
+	    capital: number;
+	    volumeM3: number;
+	    cargoCapacity: number;
+	    loadFactor: number;
+	    netProfit: number;
+	    jumps: number;
+	    minSecurity: number;
+	    unfilledReason?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new TradePackPlan(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.from = this.convertValues(source["from"], EVETradeHub);
+	        this.to = this.convertValues(source["to"], EVETradeHub);
+	        this.items = this.convertValues(source["items"], TradeLoadItem);
+	        this.capital = source["capital"];
+	        this.volumeM3 = source["volumeM3"];
+	        this.cargoCapacity = source["cargoCapacity"];
+	        this.loadFactor = source["loadFactor"];
+	        this.netProfit = source["netProfit"];
+	        this.jumps = source["jumps"];
+	        this.minSecurity = source["minSecurity"];
+	        this.unfilledReason = source["unfilledReason"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class TradePackRequest {
 	    candidates: TradeCandidate[];
 	    constraint: TradeConstraint;
@@ -1484,6 +1827,50 @@ export namespace app {
 	        this.candidates = this.convertValues(source["candidates"], TradeCandidate);
 	        this.constraint = this.convertValues(source["constraint"], TradeConstraint);
 	        this.limit = source["limit"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class TradePickupDeliveryPlan {
+	    stops: TradeChainStop[];
+	    items?: TradeLoadItem[];
+	    inventory?: TradeCargoLot[];
+	    realizedProfit: number;
+	    capital: number;
+	    volumeM3: number;
+	    totalJumps: number;
+	    minSecurity: number;
+
+	    static createFrom(source: any = {}) {
+	        return new TradePickupDeliveryPlan(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.stops = this.convertValues(source["stops"], TradeChainStop);
+	        this.items = this.convertValues(source["items"], TradeLoadItem);
+	        this.inventory = this.convertValues(source["inventory"], TradeCargoLot);
+	        this.realizedProfit = source["realizedProfit"];
+	        this.capital = source["capital"];
+	        this.volumeM3 = source["volumeM3"];
+	        this.totalJumps = source["totalJumps"];
+	        this.minSecurity = source["minSecurity"];
 	    }
 
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

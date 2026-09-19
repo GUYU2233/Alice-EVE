@@ -15,18 +15,23 @@ const (
 )
 
 type CandidateSearch struct {
-	RegionIDs     []int64
-	Budget        float64
-	CargoM3       float64
-	SalesTaxRate  float64
-	BrokerRate    float64
-	MinProfit     float64
-	MinProfitRate float64
-	MinSecurity   float64
-	MaxJumps      int
-	IncludeDepth  bool
-	Limit         int
-	Offset        int
+	// RegionIDs is accepted as a legacy alias for SourceRegionIDs.
+	RegionIDs            []int64
+	SourceRegionIDs      []int64
+	DestinationRegionIDs []int64
+	DestinationScope     string
+	PerTypeLocations     int
+	Budget               float64
+	CargoM3              float64
+	SalesTaxRate         float64
+	BrokerRate           float64
+	MinProfit            float64
+	MinProfitRate        float64
+	MinSecurity          float64
+	MaxJumps             int
+	IncludeDepth         bool
+	Limit                int
+	Offset               int
 }
 
 type TradeCandidate struct {
@@ -73,14 +78,33 @@ type CandidateRepository interface {
 }
 
 func (q *CandidateSearch) normalize() error {
-	if len(q.RegionIDs) == 0 || len(q.RegionIDs) > MaxCandidateRegions || q.Budget <= 0 || q.CargoM3 <= 0 ||
+	if len(q.SourceRegionIDs) == 0 {
+		q.SourceRegionIDs = append([]int64(nil), q.RegionIDs...)
+	}
+	if q.DestinationScope == "" {
+		q.DestinationScope = "all_collected_regions"
+	}
+	if q.PerTypeLocations == 0 {
+		q.PerTypeLocations = 8
+	}
+	if len(q.SourceRegionIDs) == 0 || len(q.SourceRegionIDs) > MaxCandidateRegions || len(q.DestinationRegionIDs) > MaxCandidateRegions || (q.DestinationScope != "all_collected_regions" && q.DestinationScope != "selected_regions") || (q.DestinationScope == "selected_regions" && len(q.DestinationRegionIDs) == 0) || q.PerTypeLocations < 1 || q.PerTypeLocations > 32 || q.Budget <= 0 || q.CargoM3 <= 0 ||
 		math.IsNaN(q.Budget) || math.IsInf(q.Budget, 0) || math.IsNaN(q.CargoM3) || math.IsInf(q.CargoM3, 0) ||
 		q.SalesTaxRate < 0 || q.SalesTaxRate >= 1 || q.BrokerRate < 0 || q.BrokerRate >= 1 ||
 		q.MinProfit < 0 || q.MinProfitRate < 0 || q.MinSecurity < -1 || q.MinSecurity > 1 || q.MaxJumps < 0 || q.MaxJumps > 256 || q.Offset < 0 || q.Offset > MaxCandidateOffset {
 		return ErrInvalidInput
 	}
-	seen := make(map[int64]struct{}, len(q.RegionIDs))
-	for _, id := range q.RegionIDs {
+	seen := make(map[int64]struct{}, len(q.SourceRegionIDs)+len(q.DestinationRegionIDs))
+	for _, id := range q.SourceRegionIDs {
+		if !validRegion(id) {
+			return ErrInvalidInput
+		}
+		if _, ok := seen[id]; ok {
+			return ErrInvalidInput
+		}
+		seen[id] = struct{}{}
+	}
+	seen = make(map[int64]struct{}, len(q.DestinationRegionIDs))
+	for _, id := range q.DestinationRegionIDs {
 		if !validRegion(id) {
 			return ErrInvalidInput
 		}

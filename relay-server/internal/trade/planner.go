@@ -30,6 +30,7 @@ type Constraint struct {
 	JumpPenalty          float64 `json:"jumpPenalty"`
 	StopPenalty          float64 `json:"stopPenalty"`
 	OptimizationStates   int     `json:"optimizationStates"`
+	TargetLoadFactor     float64 `json:"targetLoadFactor"`
 }
 
 // Snapshot identifies the immutable market view from which a plan was built.
@@ -213,10 +214,16 @@ func PackByRoute(candidates []Candidate, c Constraint, limit int) ([]PackPlan, e
 	return out, nil
 }
 
+type RouteSystem struct {
+	SystemID       int64   `json:"systemId"`
+	Name           string  `json:"name"`
+	SecurityStatus float64 `json:"securityStatus"`
+}
 type Route struct {
 	From, To    Hub
 	Jumps       int
 	MinSecurity float64
+	Systems     []RouteSystem `json:"systems,omitempty"`
 }
 
 // OrderScope pins an order set to the requested region, station, type and side.
@@ -259,6 +266,12 @@ func normalizedConstraint(c Constraint) (Constraint, error) {
 	if c.MaxItemConcentration == 0 {
 		c.MaxItemConcentration = 1
 	}
+	if c.TargetLoadFactor == 0 {
+		c.TargetLoadFactor = .9
+	}
+	if c.TargetLoadFactor <= 0 || c.TargetLoadFactor > 1 {
+		return c, errors.New("invalid target load factor")
+	}
 	if c.MaxItemConcentration <= 0 || c.MaxItemConcentration > 1 {
 		return c, errors.New("invalid item concentration")
 	}
@@ -296,6 +309,37 @@ func PackCandidates(candidates []Candidate, c Constraint) ([]LoadItem, error) {
 	if err != nil {
 		return nil, err
 	}
+	caps := []float64{c.MaxItemConcentration}
+	for _, cap := range []float64{.4, .6, 1} {
+		if cap > caps[len(caps)-1]+1e-9 {
+			caps = append(caps, cap)
+		}
+	}
+	var best []LoadItem
+	bestVolume, bestProfit := 0.0, -math.MaxFloat64
+	for _, cap := range caps {
+		cc := c
+		cc.MaxItemConcentration = cap
+		items, e := packCandidatesAtConcentration(candidates, cc)
+		if e != nil {
+			return nil, e
+		}
+		v, p := 0.0, 0.0
+		for _, it := range items {
+			v += it.VolumeM3
+			p += it.NetProfit
+		}
+		if v > bestVolume+1e-9 || (math.Abs(v-bestVolume) < 1e-9 && p > bestProfit) {
+			best, bestVolume, bestProfit = items, v, p
+		}
+		if c.CargoM3 > 0 && v/c.CargoM3 >= c.TargetLoadFactor {
+			return items, nil
+		}
+	}
+	return best, nil
+}
+
+func packCandidatesAtConcentration(candidates []Candidate, c Constraint) ([]LoadItem, error) {
 	spendable := c.Budget - c.BudgetReserve
 	if spendable <= 0 || c.CargoM3 <= 0 {
 		return []LoadItem{}, nil
@@ -351,7 +395,7 @@ func PackCandidates(candidates []Candidate, c Constraint) ([]LoadItem, error) {
 					ns.items = append(ns.items, LoadItem{TypeID: x.TypeID, Quantity: q, UnitVolume: x.UnitVolume, UnitCost: capital / float64(q), UnitReturn: revenue / float64(q), Capital: capital, VolumeM3: volume, NetProfit: net, Score: x.Score, Confidence: clamp(x.Confidence)})
 					ns.destinations[x.To.Code] = struct{}{}
 				}
-				ns.utility = ns.profit - float64(x.Jumps)*float64(q)*c.JumpPenalty - float64(maxInt(0, len(ns.destinations)-1))*c.StopPenalty
+				ns.utility = ns.profit - float64(x.Jumps)*c.JumpPenalty - float64(maxInt(0, len(ns.destinations)-1))*c.StopPenalty
 				next = append(next, ns)
 			}
 		}
@@ -489,20 +533,28 @@ type CargoLot struct {
 	To   Hub      `json:"to"`
 }
 type ChainStop struct {
-	Hub           Hub     `json:"hub"`
-	CashBefore    float64 `json:"cashBefore"`
-	SaleRevenue   float64 `json:"saleRevenue"`
-	PurchaseCost  float64 `json:"purchaseCost"`
-	CashAfter     float64 `json:"cashAfter"`
-	CargoBeforeM3 float64 `json:"cargoBeforeM3"`
-	UnloadedM3    float64 `json:"unloadedM3"`
-	LoadedM3      float64 `json:"loadedM3"`
-	CargoAfterM3  float64 `json:"cargoAfterM3"`
+	Hub           Hub        `json:"hub"`
+	ArriveVia     *Route     `json:"arriveVia,omitempty"`
+	Loads         []CargoLot `json:"loads,omitempty"`
+	Unloads       []CargoLot `json:"unloads,omitempty"`
+	CashBefore    float64    `json:"cashBefore"`
+	SaleRevenue   float64    `json:"saleRevenue"`
+	PurchaseCost  float64    `json:"purchaseCost"`
+	CashAfter     float64    `json:"cashAfter"`
+	CargoBeforeM3 float64    `json:"cargoBeforeM3"`
+	UnloadedM3    float64    `json:"unloadedM3"`
+	LoadedM3      float64    `json:"loadedM3"`
+	CargoAfterM3  float64    `json:"cargoAfterM3"`
 }
 type PickupDeliveryPlan struct {
 	Stops          []ChainStop `json:"stops"`
+	Items          []LoadItem  `json:"items,omitempty"`
 	Inventory      []CargoLot  `json:"inventory,omitempty"`
 	RealizedProfit float64     `json:"realizedProfit"`
+	Capital        float64     `json:"capital"`
+	VolumeM3       float64     `json:"volumeM3"`
+	TotalJumps     int         `json:"totalJumps"`
+	MinSecurity    float64     `json:"minSecurity"`
 }
 
 // SimulatePickupDelivery verifies station actions sequentially. Capital and cargo
@@ -527,6 +579,7 @@ func SimulatePickupDelivery(start Hub, visits []Hub, candidates []Candidate, c C
 		remaining := inventory[:0]
 		for _, lot := range inventory {
 			if lot.To.StationID == visit.StationID {
+				st.Unloads = append(st.Unloads, lot)
 				revenue := lot.Item.Capital + lot.Item.NetProfit
 				cash += revenue
 				st.SaleRevenue += revenue
@@ -553,6 +606,8 @@ func SimulatePickupDelivery(start Hub, visits []Hub, candidates []Candidate, c C
 			return PickupDeliveryPlan{}, e
 		}
 		for _, it := range loads {
+			plan.Items = append(plan.Items, it)
+			plan.Capital += it.Capital
 			var dst Hub
 			for _, x := range eligible {
 				if x.TypeID == it.TypeID {
@@ -563,13 +618,18 @@ func SimulatePickupDelivery(start Hub, visits []Hub, candidates []Candidate, c C
 			cash -= it.Capital
 			st.PurchaseCost += it.Capital
 			st.LoadedM3 += it.VolumeM3
-			inventory = append(inventory, CargoLot{Item: it, From: visit, To: dst})
+			lot := CargoLot{Item: it, From: visit, To: dst}
+			st.Loads = append(st.Loads, lot)
+			inventory = append(inventory, lot)
 		}
 		if cash < -1e-6 || used+st.LoadedM3 > c.CargoM3+1e-6 {
 			return PickupDeliveryPlan{}, errors.New("infeasible chain state")
 		}
 		st.CashAfter = cash
 		st.CargoAfterM3 = used + st.LoadedM3
+		if st.CargoAfterM3 > plan.VolumeM3 {
+			plan.VolumeM3 = st.CargoAfterM3
+		}
 		plan.Stops = append(plan.Stops, st)
 		at = visit
 		_ = at
@@ -618,6 +678,15 @@ func SearchPickupDeliveryPlans(start Hub, routes []Route, candidates []Candidate
 				if e != nil {
 					continue
 				}
+				for i := 1; i < len(visits) && i < len(plan.Stops); i++ {
+					for _, edge := range routes {
+						if edge.From.StationID == visits[i-1].StationID && edge.To.StationID == visits[i].StationID {
+							leg := edge
+							plan.Stops[i].ArriveVia = &leg
+							break
+						}
+					}
+				}
 				jumps := s.jumps + r.Jumps
 				if jumps > 256 {
 					continue
@@ -652,7 +721,10 @@ func SearchPickupDeliveryPlans(start Hub, routes []Route, candidates []Candidate
 	})
 	out := make([]PickupDeliveryPlan, 0, len(completed))
 	for _, s := range completed {
-		out = append(out, s.plan)
+		p := s.plan
+		p.TotalJumps = s.jumps
+		p.MinSecurity = s.minSecurity
+		out = append(out, p)
 	}
 	return out, nil
 }

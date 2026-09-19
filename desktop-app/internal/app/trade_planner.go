@@ -21,6 +21,7 @@ type TradeConstraint struct {
 	JumpPenalty          float64 `json:"jumpPenalty"`
 	StopPenalty          float64 `json:"stopPenalty"`
 	OptimizationStates   int     `json:"optimizationStates"`
+	TargetLoadFactor     float64 `json:"targetLoadFactor"`
 }
 type TradePriceLevel struct {
 	Price         float64 `json:"price"`
@@ -49,16 +50,60 @@ type TradeChainRequest struct {
 	Snapshot   map[string]any   `json:"snapshot"`
 	Constraint TradeConstraint  `json:"constraint"`
 }
-
-func (r *RelayClient) postTradePlanner(ctx context.Context, path string, input any) ([]map[string]any, error) {
-	body, err := json.Marshal(input)
-	if err != nil {
-		return nil, err
-	}
-	var out []map[string]any
-	err = r.doRequest(ctx, http.MethodPost, "/api/v1/trade/plans/"+path, body, &out, true)
-	return out, err
+type TradeLoadItem struct {
+	TypeID     int64   `json:"typeId"`
+	Quantity   int64   `json:"quantity"`
+	UnitVolume float64 `json:"unitVolume"`
+	UnitCost   float64 `json:"unitCost"`
+	UnitReturn float64 `json:"unitReturn"`
+	Capital    float64 `json:"capital"`
+	VolumeM3   float64 `json:"volumeM3"`
+	NetProfit  float64 `json:"netProfit"`
+	Score      float64 `json:"score"`
+	Confidence float64 `json:"confidence"`
 }
+type TradePackPlan struct {
+	From           EVETradeHub     `json:"from"`
+	To             EVETradeHub     `json:"to"`
+	Items          []TradeLoadItem `json:"items"`
+	Capital        float64         `json:"capital"`
+	VolumeM3       float64         `json:"volumeM3"`
+	CargoCapacity  float64         `json:"cargoCapacity"`
+	LoadFactor     float64         `json:"loadFactor"`
+	NetProfit      float64         `json:"netProfit"`
+	Jumps          int             `json:"jumps"`
+	MinSecurity    float64         `json:"minSecurity"`
+	UnfilledReason string          `json:"unfilledReason,omitempty"`
+}
+type TradeCargoLot struct {
+	Item TradeLoadItem `json:"item"`
+	From EVETradeHub   `json:"from"`
+	To   EVETradeHub   `json:"to"`
+}
+type TradeChainStop struct {
+	Hub           EVETradeHub     `json:"hub"`
+	Loads         []TradeCargoLot `json:"loads,omitempty"`
+	Unloads       []TradeCargoLot `json:"unloads,omitempty"`
+	CashBefore    float64         `json:"cashBefore"`
+	SaleRevenue   float64         `json:"saleRevenue"`
+	PurchaseCost  float64         `json:"purchaseCost"`
+	CashAfter     float64         `json:"cashAfter"`
+	CargoBeforeM3 float64         `json:"cargoBeforeM3"`
+	UnloadedM3    float64         `json:"unloadedM3"`
+	LoadedM3      float64         `json:"loadedM3"`
+	CargoAfterM3  float64         `json:"cargoAfterM3"`
+}
+type TradePickupDeliveryPlan struct {
+	Stops          []TradeChainStop `json:"stops"`
+	Items          []TradeLoadItem  `json:"items,omitempty"`
+	Inventory      []TradeCargoLot  `json:"inventory,omitempty"`
+	RealizedProfit float64          `json:"realizedProfit"`
+	Capital        float64          `json:"capital"`
+	VolumeM3       float64          `json:"volumeM3"`
+	TotalJumps     int              `json:"totalJumps"`
+	MinSecurity    float64          `json:"minSecurity"`
+}
+
 func (r *RelayClient) TradeRegionCollection(ctx context.Context, regionID int64) (TradeRegionStatus, error) {
 	var out TradeRegionStatus
 	err := r.doRequest(ctx, http.MethodGet, "/api/v1/trade/market/regions/"+strconv.FormatInt(regionID, 10), nil, &out, true)
@@ -69,9 +114,21 @@ func (r *RelayClient) CollectTradeRegion(ctx context.Context, regionID int64) (T
 	err := r.doRequest(ctx, http.MethodPost, "/api/v1/trade/market/regions/"+strconv.FormatInt(regionID, 10), nil, &out, true)
 	return out, err
 }
-func (r *RelayClient) ComposeTradePlan(ctx context.Context, q TradePackRequest) ([]map[string]any, error) {
-	return r.postTradePlanner(ctx, "compose", q)
+func (r *RelayClient) ComposeTradePlan(ctx context.Context, q TradePackRequest) ([]TradePackPlan, error) {
+	body, err := json.Marshal(q)
+	if err != nil {
+		return nil, err
+	}
+	var out []TradePackPlan
+	err = r.doRequest(ctx, http.MethodPost, "/api/v1/trade/plans/compose", body, &out, true)
+	return out, err
 }
-func (r *RelayClient) ChainTradePlans(ctx context.Context, q TradeChainRequest) ([]map[string]any, error) {
-	return r.postTradePlanner(ctx, "chain", q)
+func (r *RelayClient) ChainTradePlans(ctx context.Context, q TradeChainRequest) ([]TradePickupDeliveryPlan, error) {
+	body, err := json.Marshal(q)
+	if err != nil {
+		return nil, err
+	}
+	var out []TradePickupDeliveryPlan
+	err = r.doRequest(ctx, http.MethodPost, "/api/v1/trade/plans/chain", body, &out, true)
+	return out, err
 }

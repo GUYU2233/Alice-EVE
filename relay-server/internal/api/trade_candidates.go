@@ -10,18 +10,22 @@ import (
 )
 
 type candidateSearchRequest struct {
-	RegionIDs     []int64 `json:"regionIds"`
-	Budget        float64 `json:"budget"`
-	CargoM3       float64 `json:"cargoM3"`
-	SalesTaxRate  float64 `json:"salesTaxRate"`
-	BrokerRate    float64 `json:"brokerRate"`
-	MinProfit     float64 `json:"minProfit"`
-	MinProfitRate float64 `json:"minProfitRate"`
-	MinSecurity   float64 `json:"minSecurity"`
-	MaxJumps      int     `json:"maxJumps"`
-	IncludeDepth  bool    `json:"includeDepth"`
-	Limit         int     `json:"limit"`
-	Offset        int     `json:"offset"`
+	RegionIDs            []int64 `json:"regionIds,omitempty"`
+	SourceRegionIDs      []int64 `json:"sourceRegionIds,omitempty"`
+	DestinationRegionIDs []int64 `json:"destinationRegionIds,omitempty"`
+	DestinationScope     string  `json:"destinationScope,omitempty"`
+	PerTypeLocations     int     `json:"perTypeLocations,omitempty"`
+	Budget               float64 `json:"budget"`
+	CargoM3              float64 `json:"cargoM3"`
+	SalesTaxRate         float64 `json:"salesTaxRate"`
+	BrokerRate           float64 `json:"brokerRate"`
+	MinProfit            float64 `json:"minProfit"`
+	MinProfitRate        float64 `json:"minProfitRate"`
+	MinSecurity          float64 `json:"minSecurity"`
+	MaxJumps             int     `json:"maxJumps"`
+	IncludeDepth         bool    `json:"includeDepth"`
+	Limit                int     `json:"limit"`
+	Offset               int     `json:"offset"`
 }
 
 func (s *Server) tradeCandidateSearch(w http.ResponseWriter, r *http.Request) {
@@ -46,7 +50,8 @@ func (s *Server) tradeCandidateSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	page, err := s.candidateRepo.SearchCandidates(r.Context(), marketdata.CandidateSearch{
-		RegionIDs: in.RegionIDs, Budget: in.Budget, CargoM3: in.CargoM3,
+		RegionIDs: in.RegionIDs, SourceRegionIDs: in.SourceRegionIDs, DestinationRegionIDs: in.DestinationRegionIDs,
+		DestinationScope: in.DestinationScope, PerTypeLocations: in.PerTypeLocations, Budget: in.Budget, CargoM3: in.CargoM3,
 		SalesTaxRate: in.SalesTaxRate, BrokerRate: in.BrokerRate,
 		MinProfit: in.MinProfit, MinProfitRate: in.MinProfitRate,
 		MinSecurity: in.MinSecurity, MaxJumps: in.MaxJumps, IncludeDepth: in.IncludeDepth, Limit: in.Limit, Offset: in.Offset,

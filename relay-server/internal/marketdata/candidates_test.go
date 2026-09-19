@@ -15,6 +15,20 @@ func TestCandidateSearchNormalize(t *testing.T) {
 	}
 }
 
+func TestCandidateSearchSeparatesSourceAndGlobalDestinations(t *testing.T) {
+	q := CandidateSearch{SourceRegionIDs: []int64{10000002}, DestinationScope: "all_collected_regions", Budget: 1, CargoM3: 1}
+	if err := q.normalize(); err != nil {
+		t.Fatal(err)
+	}
+	if q.PerTypeLocations != 8 || len(q.SourceRegionIDs) != 1 {
+		t.Fatalf("normalized=%+v", q)
+	}
+	q = CandidateSearch{SourceRegionIDs: []int64{10000002}, DestinationScope: "selected_regions", Budget: 1, CargoM3: 1}
+	if !errors.Is(q.normalize(), ErrInvalidInput) {
+		t.Fatal("selected destination scope requires destination regions")
+	}
+}
+
 func TestCandidateSearchRejectsUnsafeBounds(t *testing.T) {
 	cases := []CandidateSearch{
 		{RegionIDs: nil, Budget: 1, CargoM3: 1},
@@ -33,7 +47,7 @@ func TestCandidateSearchRejectsUnsafeBounds(t *testing.T) {
 }
 
 func TestCandidateSQLIsBoundedAndUsesCurrentSummaries(t *testing.T) {
-	for _, want := range []string{"region_market_snapshots", "current_batch_id", "region_market_best_levels", "LIMIT $8 OFFSET $9", "LEAST(a.ask_depth,b.bid_depth", "eve_types", "b.state='active'", "COALESCE(NULLIF(t.packaged_volume,0),t.volume)", "best_ask > 0"} {
+	for _, want := range []string{"source_selected", "destination_selected", "all_collected_regions", "region_market_snapshots", "current_batch_id", "region_market_best_levels", "LIMIT $11 OFFSET $12", "LEAST(a.ask_depth,b.bid_depth", "a.rn<=$4", "b.rn<=$4", "eve_types", "b.state='active'", "COALESCE(NULLIF(t.packaged_volume,0),t.volume)", "best_ask>0"} {
 		if !contains(candidateSearchSQL, want) {
 			t.Errorf("SQL missing %q", want)
 		}

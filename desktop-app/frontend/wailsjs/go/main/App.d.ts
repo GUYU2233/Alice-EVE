@@ -14,7 +14,9 @@ export function BeginOAuthLogin(arg1:string):Promise<Record<string, any>>;
 
 export function CancelAgentRun(arg1:string,arg2:string):Promise<app.AgentRun>;
 
-export function ChainEVETradePlans(arg1:app.TradeChainRequest):Promise<Array<Record<string, any>>>;
+export function CancelEVEMarketPlanJob(arg1:string):Promise<app.MarketPlanJob>;
+
+export function ChainEVETradePlans(arg1:app.TradeChainRequest):Promise<Array<app.TradePickupDeliveryPlan>>;
 
 export function ChatLogStatus():Promise<app.ChatLogStatus>;
 
@@ -28,9 +30,11 @@ export function CollectEVETradeRegion(arg1:number):Promise<app.TradeRegionStatus
 
 export function CompleteOAuthLogin(arg1:string,arg2:string,arg3:string):Promise<Record<string, any>>;
 
-export function ComposeEVETradePlan(arg1:app.TradePackRequest):Promise<Array<Record<string, any>>>;
+export function ComposeEVETradePlan(arg1:app.TradePackRequest):Promise<Array<app.TradePackPlan>>;
 
 export function ConfirmPairing(arg1:string):Promise<storage.PairingState>;
+
+export function CreateEVEMarketPlanJob(arg1:app.MarketPlanJobRequest):Promise<app.MarketPlanJob>;
 
 export function FetchAlerts(arg1:number,arg2:number):Promise<app.DataPage_eve_assistant_desktop_app_internal_app_AlertItem_>;
 
@@ -63,6 +67,10 @@ export function FetchEVEMailBody(arg1:number,arg2:number):Promise<Record<string,
 export function FetchEVEMarketHistory(arg1:number,arg2:number):Promise<Array<app.EVEMarketHistory>>;
 
 export function FetchEVEMarketOrders(arg1:number,arg2:string,arg3:number):Promise<Array<app.EVEMarketOrder>>;
+
+export function FetchEVEMarketPlanJob(arg1:string):Promise<app.MarketPlanJob>;
+
+export function FetchEVEMarketPlanResults(arg1:string,arg2:number):Promise<app.MarketPlanResultPage>;
 
 export function FetchEVEMarketPrices():Promise<Array<app.EVEMarketPrice>>;
 

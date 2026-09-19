@@ -56,7 +56,10 @@ func (s *Server) eveCharacterData(w http.ResponseWriter, r *http.Request) {
 		httpapi.WriteError(w, r, 401, "unauthorized", "authentication required")
 		return
 	}
-	remainder := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/eve/characters/"), "/")
+	remainder := ""
+	if r.URL.Path != "/api/v1/eve/characters" && r.URL.Path != "/api/v1/eve/characters/" {
+		remainder = strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/eve/characters/"), "/")
+	}
 	if remainder == "" {
 		data, err := s.esiData.ListAccountCharacters(r.Context(), accountID)
 		if err != nil {

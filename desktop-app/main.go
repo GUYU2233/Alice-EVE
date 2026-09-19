@@ -226,11 +226,23 @@ func (a *App) FetchEVETradeRegionCollection(regionID int64) (app.TradeRegionStat
 func (a *App) CollectEVETradeRegion(regionID int64) (app.TradeRegionStatus, error) {
 	return a.relay.CollectTradeRegion(context.Background(), regionID)
 }
-func (a *App) ComposeEVETradePlan(req app.TradePackRequest) ([]map[string]any, error) {
+func (a *App) ComposeEVETradePlan(req app.TradePackRequest) ([]app.TradePackPlan, error) {
 	return a.relay.ComposeTradePlan(context.Background(), req)
 }
-func (a *App) ChainEVETradePlans(req app.TradeChainRequest) ([]map[string]any, error) {
+func (a *App) ChainEVETradePlans(req app.TradeChainRequest) ([]app.TradePickupDeliveryPlan, error) {
 	return a.relay.ChainTradePlans(context.Background(), req)
+}
+func (a *App) CreateEVEMarketPlanJob(req app.MarketPlanJobRequest) (app.MarketPlanJob, error) {
+	return a.relay.CreateMarketPlanJob(context.Background(), req)
+}
+func (a *App) FetchEVEMarketPlanJob(id string) (app.MarketPlanJob, error) {
+	return a.relay.MarketPlanJob(context.Background(), id)
+}
+func (a *App) FetchEVEMarketPlanResults(id string, after int64) (app.MarketPlanResultPage, error) {
+	return a.relay.MarketPlanResults(context.Background(), id, after)
+}
+func (a *App) CancelEVEMarketPlanJob(id string) (app.MarketPlanJob, error) {
+	return a.relay.CancelMarketPlanJob(context.Background(), id)
 }
 func (a *App) FetchEVETradeHubs() ([]app.EVETradeHub, error) {
 	return a.relay.FetchEVETradeHubs(context.Background())
@@ -438,7 +450,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	if err := wails.Run(&options.App{AssetServer: &assetserver.Options{Assets: assets}, Title: "EVE 助手", Width: 1280, Height: 800, OnStartup: appInstance.Startup, OnShutdown: appInstance.Shutdown, Bind: []interface{}{appInstance}}); err != nil {
+	if err := wails.Run(&options.App{AssetServer: &assetserver.Options{Assets: assets}, Title: "AliceEVE", Width: 1280, Height: 800, OnStartup: appInstance.Startup, OnShutdown: appInstance.Shutdown, Bind: []interface{}{appInstance}}); err != nil {
 		panic(err)
 	}
 }

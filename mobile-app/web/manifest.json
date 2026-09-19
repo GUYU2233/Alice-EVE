@@ -1,6 +1,6 @@
 {
-    "name": "eve_assistant_mobile",
-    "short_name": "eve_assistant_mobile",
+    "name": "AliceEVE",
+    "short_name": "AliceEVE",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

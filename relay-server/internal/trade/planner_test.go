@@ -34,6 +34,23 @@ func TestPackCandidatesHonorsReserveCargoAndConcentration(t *testing.T) {
 	}
 }
 
+func TestPackCandidatesRelaxesConcentrationToReachTargetLoad(t *testing.T) {
+	j, _ := HubByCode("jita")
+	a, _ := HubByCode("amarr")
+	x := candidate(1, j, a, 1, .9)
+	x.MaxQuantity = 100
+	x.UnitCost = 1
+	x.NetPerUnit = 1
+	x.UnitVolume = 1
+	items, err := PackCandidates([]Candidate{x}, Constraint{Budget: 100, CargoM3: 100, MaxItemConcentration: .25, TargetLoadFactor: .9})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Quantity < 90 {
+		t.Fatalf("adaptive concentration did not fill cargo: %+v", items)
+	}
+}
+
 func TestPackCandidatesRejectsInvalidAndKeepsScoreConfidenceSeparate(t *testing.T) {
 	jita, _ := HubByCode("jita")
 	amarr, _ := HubByCode("amarr")
@@ -57,7 +74,7 @@ func TestSearchPlansBoundsSecurityAndBeamDeterminism(t *testing.T) {
 	d, _ := HubByCode("dodixie")
 	r, _ := HubByCode("rens")
 	h, _ := HubByCode("hek")
-	routes := []Route{{j, a, 8, .9}, {j, d, 5, .4}, {a, r, 7, .8}, {r, h, 4, .8}, {h, d, 3, .8}}
+	routes := []Route{{From: j, To: a, Jumps: 8, MinSecurity: .9}, {From: j, To: d, Jumps: 5, MinSecurity: .4}, {From: a, To: r, Jumps: 7, MinSecurity: .8}, {From: r, To: h, Jumps: 4, MinSecurity: .8}, {From: h, To: d, Jumps: 3, MinSecurity: .8}}
 	cs := []Candidate{candidate(1, j, a, 90, .9), candidate(2, j, d, 100, 1), candidate(3, a, r, 80, .8), candidate(4, r, h, 70, .7), candidate(5, h, d, 60, .6)}
 	plans, err := SearchPlans(j, routes, cs, Snapshot{AsOf: time.Unix(1, 0)}, Constraint{Budget: 100, CargoM3: 10, MinSecurity: .5, BeamWidth: 1, MaxStops: 99, MaxLegs: 99})
 	if err != nil {
@@ -211,6 +228,9 @@ func TestSimulatePickupDeliveryCarriesInventoryAndReleasesCashOnlyAtDestination(
 	if p.Stops[2].SaleRevenue != 250 || p.Stops[2].CargoAfterM3 != 0 || p.Stops[2].CashAfter != 250 || p.RealizedProfit != 70 {
 		t.Fatalf("delivery state wrong: %+v", p)
 	}
+	if len(p.Items) != 2 || len(p.Stops[0].Loads) != 1 || len(p.Stops[1].Loads) != 1 || len(p.Stops[2].Unloads) != 2 || p.Capital != 180 || p.VolumeM3 != 10 {
+		t.Fatalf("chain manifest or aggregates lost: %+v", p)
+	}
 }
 
 func TestSearchPickupDeliveryPlansRequiresActualDelivery(t *testing.T) {
@@ -221,7 +241,7 @@ func TestSearchPickupDeliveryPlansRequiresActualDelivery(t *testing.T) {
 	x.MaxQuantity = 1
 	x.UnitCost = 100
 	x.NetPerUnit = 50
-	plans, err := SearchPickupDeliveryPlans(a, []Route{{a, b, 1, .8}, {b, d, 1, .8}}, []Candidate{x}, Constraint{Budget: 100, CargoM3: 1, BeamWidth: 4, MaxStops: 3})
+	plans, err := SearchPickupDeliveryPlans(a, []Route{{From: a, To: b, Jumps: 1, MinSecurity: .8}, {From: b, To: d, Jumps: 1, MinSecurity: .8}}, []Candidate{x}, Constraint{Budget: 100, CargoM3: 1, BeamWidth: 4, MaxStops: 3})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,6 +250,9 @@ func TestSearchPickupDeliveryPlansRequiresActualDelivery(t *testing.T) {
 	}
 	if plans[0].Stops[1].CargoAfterM3 != 1 || plans[0].Stops[1].SaleRevenue != 0 {
 		t.Fatalf("cargo released before delivery: %+v", plans[0].Stops[1])
+	}
+	if plans[0].TotalJumps != 2 || plans[0].MinSecurity != .8 || len(plans[0].Items) != 1 {
+		t.Fatalf("route metadata or manifest missing: %+v", plans[0])
 	}
 }
 
@@ -245,7 +268,7 @@ func TestSearchPlansReinvestsRealizedProfit(t *testing.T) {
 	second.MaxQuantity = 1
 	second.UnitCost = 150
 	second.NetPerUnit = 50
-	plans, err := SearchPlans(j, []Route{{j, a, 1, 1}, {a, r, 1, 1}}, []Candidate{first, second}, Snapshot{}, Constraint{Budget: 100, CargoM3: 10, BeamWidth: 4})
+	plans, err := SearchPlans(j, []Route{{From: j, To: a, Jumps: 1, MinSecurity: 1}, {From: a, To: r, Jumps: 1, MinSecurity: 1}}, []Candidate{first, second}, Snapshot{}, Constraint{Budget: 100, CargoM3: 10, BeamWidth: 4})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +280,7 @@ func TestSearchPlansReinvestsRealizedProfit(t *testing.T) {
 func TestSearchPlansNoRevisit(t *testing.T) {
 	j, _ := HubByCode("jita")
 	a, _ := HubByCode("amarr")
-	plans, err := SearchPlans(j, []Route{{j, a, 1, 1}, {a, j, 1, 1}}, []Candidate{candidate(1, j, a, 1, 1), candidate(2, a, j, 1, 1)}, Snapshot{}, Constraint{Budget: 100, CargoM3: 10})
+	plans, err := SearchPlans(j, []Route{{From: j, To: a, Jumps: 1, MinSecurity: 1}, {From: a, To: j, Jumps: 1, MinSecurity: 1}}, []Candidate{candidate(1, j, a, 1, 1), candidate(2, a, j, 1, 1)}, Snapshot{}, Constraint{Budget: 100, CargoM3: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
