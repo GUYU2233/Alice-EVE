@@ -19,11 +19,11 @@ func NewPostgres(ctx context.Context, dsn string) (*PostgresStore, error) {
 	}
 	// Keep spare connections for authentication and short control-plane reads
 	// while market planning performs CPU/SQL-heavy snapshot calculations.
-	if cfg.MaxConns < 12 {
-		cfg.MaxConns = 12
+	if cfg.MaxConns < 120 {
+		cfg.MaxConns = 120
 	}
-	if cfg.MinConns < 2 {
-		cfg.MinConns = 2
+	if cfg.MinConns < 4 {
+		cfg.MinConns = 4
 	}
 	cfg.MaxConnLifetime = 30 * time.Minute
 	cfg.MaxConnIdleTime = 5 * time.Minute
