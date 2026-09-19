@@ -49,7 +49,7 @@ func (r *PostgresRepository) Create(ctx context.Context, account string, q Creat
 	// A workspace has exactly one live plan per account/character/mode. Without
 	// superseding older constraints, every historic plan watches every snapshot
 	// forever and multiplies expensive BASKET/CHAIN work.
-	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::text||':'||$2::text||':'||$3::text,0))`, account, q.CharacterID, q.Mode); err != nil {
+	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::text||':'||$2::bigint::text||':'||$3::text,0))`, account, q.CharacterID, q.Mode); err != nil {
 		return Job{}, err
 	}
 	if _, err = tx.Exec(ctx, `UPDATE market_plan_jobs SET state='cancelled',worker_token=NULL,lease_until=NULL,completed_at=now(),updated_at=now() WHERE account_id=$1::uuid AND character_id=$2 AND mode=$3 AND state IN ('queued','discovering','routing','optimizing','watching')`, account, q.CharacterID, q.Mode); err != nil {
