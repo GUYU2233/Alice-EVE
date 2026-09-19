@@ -67,6 +67,7 @@ func NewPersistentApp() (*App, error) {
 		cacheDir := filepath.Join(configDir, "Alice-EVE", "sde-cache")
 		a.sde = eve.NewSDEIndex(cacheDir)
 		dbPath := filepath.Join(sdeDir, "eve-sde.sqlite")
+		_ = eve.EnsureBundledSDE(context.Background(), dbPath)
 		if _, openErr := a.sde.OpenDatabase(context.Background(), dbPath); openErr != nil {
 			if info, statErr := os.Stat(sdeDir); statErr == nil && info.IsDir() {
 				if setErr := a.sde.SetDirectory(sdeDir); setErr == nil {
