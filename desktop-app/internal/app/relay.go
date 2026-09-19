@@ -70,7 +70,7 @@ type OAuthStartResponse struct {
 }
 
 func NewRelayClient() *RelayClient {
-	return &RelayClient{client: &http.Client{Timeout: 8 * time.Second}, routeCache: newRouteClientCache(10*time.Minute, 2048), entityCache: newEntityClientCache(24*time.Hour, 4096)}
+	return &RelayClient{client: &http.Client{Timeout: 20 * time.Second}, routeCache: newRouteClientCache(10*time.Minute, 2048), entityCache: newEntityClientCache(24*time.Hour, 4096)}
 }
 func NewRelayClientWithSecrets(secrets storage.SecretStore) *RelayClient {
 	r := NewRelayClient()

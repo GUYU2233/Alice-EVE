@@ -52,7 +52,7 @@ func (r *PostgresRepository) Get(ctx context.Context, account, id string) (Job, 
 	return j, e
 }
 func (r *PostgresRepository) ResultsAfter(ctx context.Context, account, id string, after int64) ([]Result, error) {
-	rows, e := r.pool.Query(ctx, `SELECT r.revision,r.rank,r.stable_key,r.score,r.payload,r.created_at FROM market_plan_results r JOIN market_plan_jobs j ON j.id=r.job_id WHERE r.job_id=$1::uuid AND j.account_id=$2::uuid AND r.revision>$3 ORDER BY r.revision,r.rank`, id, account, after)
+	rows, e := r.pool.Query(ctx, `SELECT r.revision,r.rank,r.stable_key,r.score,r.payload,r.created_at FROM market_plan_results r JOIN market_plan_jobs j ON j.id=r.job_id WHERE r.job_id=$1::uuid AND j.account_id=$2::uuid AND r.revision=(SELECT max(revision) FROM market_plan_results WHERE job_id=r.job_id AND revision>$3) ORDER BY r.rank`, id, account, after)
 	if e != nil {
 		return nil, e
 	}
@@ -120,8 +120,19 @@ func (r *PostgresRepository) Commit(ctx context.Context, claim Claim, in Commit,
 	if err != nil {
 		return Job{}, err
 	}
-	for i, x := range in.Results {
-		if _, err = tx.Exec(ctx, `INSERT INTO market_plan_results(job_id,revision,rank,stable_key,score,payload,created_at) VALUES($1::uuid,$2,$3,$4,$5,$6,$7)`, claim.Job.ID, revision, i+1, x.StableKey, x.Score, x.Payload, now); err != nil {
+	if len(in.Results) > 0 {
+		batch := &pgx.Batch{}
+		for i, x := range in.Results {
+			batch.Queue(`INSERT INTO market_plan_results(job_id,revision,rank,stable_key,score,payload,created_at) VALUES($1::uuid,$2,$3,$4,$5,$6,$7)`, claim.Job.ID, revision, i+1, x.StableKey, x.Score, x.Payload, now)
+		}
+		br := tx.SendBatch(ctx, batch)
+		for range in.Results {
+			if _, err = br.Exec(); err != nil {
+				_ = br.Close()
+				return Job{}, err
+			}
+		}
+		if err = br.Close(); err != nil {
 			return Job{}, err
 		}
 	}
