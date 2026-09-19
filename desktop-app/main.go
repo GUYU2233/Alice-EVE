@@ -419,6 +419,8 @@ func (a *App) ReindexSDE() (eve.SDEStatus, error)              { return a.sde.Re
 func (a *App) SDEStatus() eve.SDEStatus                        { return a.sde.Status() }
 func (a *App) SDETypeNames(ids []int64) map[int64]string       { return a.sde.TypeNames(ids) }
 func (a *App) SDELocationNames(ids []int64) map[int64]string   { return a.sde.LocationNames(ids) }
+func (a *App) SDERegions() []eve.SDEEntry                      { return a.sde.Regions() }
+func (a *App) SDERegionForSystem(id int64) int64               { return a.sde.RegionForSystem(id) }
 func (a *App) QuerySDE(query string, limit int) []eve.SDEEntry { return a.sde.Query(query, limit) }
 
 // QueryESI accepts an allow-listed ESI path, never an arbitrary URL.

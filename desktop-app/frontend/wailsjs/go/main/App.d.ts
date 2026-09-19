@@ -150,6 +150,10 @@ export function SDEDirectory():Promise<string>;
 
 export function SDELocationNames(arg1:Array<number>):Promise<Record<number, string>>;
 
+export function SDERegionForSystem(arg1:number):Promise<number>;
+
+export function SDERegions():Promise<Array<eve.SDEEntry>>;
+
 export function SDEStatus():Promise<eve.SDEStatus>;
 
 export function SDETypeNames(arg1:Array<number>):Promise<Record<number, string>>;

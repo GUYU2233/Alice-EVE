@@ -506,6 +506,39 @@ func (s *SDEIndex) LocationNames(ids []int64) map[int64]string {
 	return out
 }
 
+func (s *SDEIndex) RegionForSystem(systemID int64) int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.repository != nil {
+		if x, err := s.repository.RegionForSystem(context.Background(), systemID); err == nil {
+			return x.ID
+		}
+	}
+	return 0
+}
+
+func (s *SDEIndex) Regions() []SDEEntry {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := []SDEEntry{}
+	if s.repository != nil {
+		rows, err := s.repository.Regions(context.Background())
+		if err == nil {
+			for _, row := range rows {
+				out = append(out, SDEEntry{ID: fmt.Sprint(row.ID), Name: row.Name, Kind: "region", Source: "sqlite"})
+			}
+		}
+	} else {
+		for _, e := range s.entries {
+			if e.Kind == "region" {
+				out = append(out, e)
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
 func (s *SDEIndex) TypeNames(ids []int64) map[int64]string {
 	out := make(map[int64]string)
 	s.mu.RLock()

@@ -229,6 +229,30 @@ func (r *Repository) GroupByID(ctx context.Context, id int64) (Named, error) {
 func (r *Repository) GroupByName(ctx context.Context, n string) (Named, error) {
 	return r.named(ctx, "groups", "name", n)
 }
+func (r *Repository) RegionForSystem(ctx context.Context, systemID int64) (Named, error) {
+	var x Named
+	err := r.db.QueryRowContext(ctx, `SELECT r.id,r.name FROM systems s JOIN constellations c ON c.id=s.constellation_id JOIN regions r ON r.id=c.region_id WHERE s.id=?`, systemID).Scan(&x.ID, &x.Name)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = ErrNotFound
+	}
+	return x, err
+}
+func (r *Repository) Regions(ctx context.Context) ([]Named, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id,name FROM regions ORDER BY name COLLATE NOCASE,id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Named{}
+	for rows.Next() {
+		var x Named
+		if err = rows.Scan(&x.ID, &x.Name); err != nil {
+			return nil, err
+		}
+		out = append(out, x)
+	}
+	return out, rows.Err()
+}
 func (r *Repository) RegionByID(ctx context.Context, id int64) (Named, error) {
 	return r.named(ctx, "regions", "id", id)
 }

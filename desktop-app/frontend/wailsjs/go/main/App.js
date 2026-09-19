@@ -290,6 +290,14 @@ export function SDELocationNames(arg1) {
   return window['go']['main']['App']['SDELocationNames'](arg1);
 }
 
+export function SDERegionForSystem(arg1) {
+  return window['go']['main']['App']['SDERegionForSystem'](arg1);
+}
+
+export function SDERegions() {
+  return window['go']['main']['App']['SDERegions']();
+}
+
 export function SDEStatus() {
   return window['go']['main']['App']['SDEStatus']();
 }

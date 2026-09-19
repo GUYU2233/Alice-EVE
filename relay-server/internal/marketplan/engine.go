@@ -49,7 +49,9 @@ func (e PlanningEngine) Step(ctx context.Context, j Job) (Commit, error) {
 		if r.Status != "ready" {
 			continue
 		}
-		c := trade.Candidate{TypeID: x.TypeID, From: trade.Hub{Code: fmt.Sprint(x.SourceLocationID), Name: fmt.Sprint(x.SourceLocationID), NameZH: fmt.Sprint(x.SourceLocationID), RegionID: x.SourceRegionID, StationID: x.SourceLocationID, SystemID: x.SourceSystemID}, To: trade.Hub{Code: fmt.Sprint(x.DestinationLocationID), Name: fmt.Sprint(x.DestinationLocationID), NameZH: fmt.Sprint(x.DestinationLocationID), RegionID: x.DestinationRegionID, StationID: x.DestinationLocationID, SystemID: x.DestinationSystemID}, MaxQuantity: x.Quantity, UnitVolume: x.ItemVolumeM3, UnitCost: x.BuyPrice, UnitReturn: x.SellPrice, NetPerUnit: x.NetProfit / math.Max(1, float64(x.Quantity)), SalesTaxRate: .036, Confidence: .7, Jumps: r.Jumps, MinSecurity: r.MinSecurity}
+		score := 30*math.Tanh(x.NetProfit/1e7) + 25*math.Tanh(x.ProfitRate*5) + 20*math.Tanh((x.NetProfit/math.Max(.01, x.CargoUsedM3))/5000) + 15*math.Exp(-float64(r.Jumps)/18) + 5*math.Max(0, math.Min(1, (r.MinSecurity+1)/2))
+		score = math.Max(0, math.Min(100, score))
+		c := trade.Candidate{TypeID: x.TypeID, From: trade.Hub{Code: fmt.Sprint(x.SourceLocationID), Name: fmt.Sprint(x.SourceLocationID), NameZH: fmt.Sprint(x.SourceLocationID), RegionID: x.SourceRegionID, StationID: x.SourceLocationID, SystemID: x.SourceSystemID}, To: trade.Hub{Code: fmt.Sprint(x.DestinationLocationID), Name: fmt.Sprint(x.DestinationLocationID), NameZH: fmt.Sprint(x.DestinationLocationID), RegionID: x.DestinationRegionID, StationID: x.DestinationLocationID, SystemID: x.DestinationSystemID}, MaxQuantity: x.Quantity, UnitVolume: x.ItemVolumeM3, UnitCost: x.BuyPrice, UnitReturn: x.SellPrice, NetPerUnit: x.NetProfit / math.Max(1, float64(x.Quantity)), SalesTaxRate: .036, Score: score, Confidence: .7, Jumps: r.Jumps, MinSecurity: r.MinSecurity}
 		for _, l := range x.AskLevels {
 			c.AskLevels = append(c.AskLevels, trade.PriceLevel{Price: l.Price, Volume: l.Volume, MinimumVolume: l.MinimumVolume})
 		}
@@ -62,11 +64,12 @@ func (e PlanningEngine) Step(ctx context.Context, j Job) (Commit, error) {
 			x.RouteSafetyStatus = "ready"
 			payload, _ := json.Marshal(struct {
 				marketdata.TradeCandidate
+				Score       float64               `json:"score"`
 				Jumps       int                   `json:"jumps"`
 				MinSecurity float64               `json:"minSecurity"`
 				Systems     []routeplanner.System `json:"systems"`
-			}{x, r.Jumps, r.MinSecurity, r.Systems})
-			single = append(single, PendingResult{StableKey: fmt.Sprintf("%d/%d/%d", x.TypeID, x.SourceLocationID, x.DestinationLocationID), Score: x.NetProfit, Payload: payload})
+			}{x, score, r.Jumps, r.MinSecurity, r.Systems})
+			single = append(single, PendingResult{StableKey: fmt.Sprintf("%d/%d/%d", x.TypeID, x.SourceLocationID, x.DestinationLocationID), Score: score, Payload: payload})
 		}
 	}
 	constraint := trade.Constraint{Budget: j.Constraints.Budget, BudgetReserve: j.Constraints.BudgetReserve, CargoM3: j.Constraints.CargoM3, MaxItemConcentration: .25, TargetLoadFactor: j.Constraints.TargetLoadFactor, MinSecurity: j.Constraints.MinSecurity, MaxStops: 4, MaxLegs: 3, BeamWidth: 48, MaxItemsPerLeg: 32, JumpPenalty: 0, StopPenalty: 0, OptimizationStates: 1024}
