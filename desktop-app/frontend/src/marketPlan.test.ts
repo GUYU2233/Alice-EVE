@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {manifestItems,planItems,planMetric,routeNodes} from './marketPlan';
+import {chainRouteName,manifestItems,planFreshness,planItems,planMetric,routeNodes} from './marketPlan';
 
 describe('market plan view model',()=>{
  it('aggregates a basket and exposes endpoint nodes',()=>{const p={from:{StationID:10,NameZH:'甲站'},to:{StationID:20,NameZH:'乙站'},items:[{typeId:1,quantity:2,capital:100,volumeM3:4,unitReturn:80,netProfit:60},{typeId:2,quantity:3,capital:90,volumeM3:6,unitReturn:50,netProfit:60}],capital:190,volumeM3:10,netProfit:120,jumps:4,minSecurity:.7};expect(planItems(p)).toHaveLength(2);expect(planMetric(p,'capital')).toBe(190);expect(planMetric(p,'cargo')).toBe(10);expect(planMetric(p,'profit')).toBe(120);expect(routeNodes(p).map(x=>x.action)).toEqual(['BUY','SELL'])});
@@ -7,4 +7,6 @@ describe('market plan view model',()=>{
  it('builds single nodes carrying station ids',()=>{const p={SourceLocationID:60000001,DestinationLocationID:60000002,TypeID:34,Quantity:1};const nodes=routeNodes(p);expect(nodes[0].stationId).toBe(60000001);expect(nodes[1].stationId).toBe(60000002);expect(manifestItems(p)).toEqual([p])});
  it('does not invent zero jumps for missing route fields',()=>{expect(planMetric({RouteSafetyStatus:'unavailable'},'jumps')).toBeUndefined();expect(planMetric({Jumps:0,RouteSafetyStatus:'ready'},'jumps')).toBe(0)});
  it('reconstructs invalid plan capital from item costs',()=>{const p={capital:0,items:[{unitCost:2.26,quantity:1}]};expect(planMetric(p,'capital')).toBe(2.26)});
+ it('uses the oldest item snapshot as plan freshness',()=>{const p={items:[{sourceSnapshotAt:'2026-01-02T00:00:00Z',destinationSnapshotAt:'2026-01-03T00:00:00Z'},{sourceSnapshotAt:'2026-01-01T00:00:00Z'}]};expect(planFreshness(p)).toBe('2026-01-01T00:00:00.000Z')});
+ it('builds a human route name from chain stops',()=>{const p={stops:[{hub:{stationId:1,name:'A'}},{hub:{stationId:2,name:'B'}}]};expect(chainRouteName(p,{1:'甲站',2:'乙站'})).toBe('甲站 → 乙站')});
 });
