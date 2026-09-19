@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,9 +11,13 @@ import (
 	"relay-server/internal/marketplan"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func (s *Server) tradePlanJobs(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	r = r.WithContext(ctx)
 	account, ok := s.authenticatedAccount(r)
 	if !ok {
 		httpapi.WriteError(w, r, 401, "unauthorized", "authentication required")

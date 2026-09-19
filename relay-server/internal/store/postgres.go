@@ -13,7 +13,22 @@ import (
 type PostgresStore struct{ Pool *pgxpool.Pool }
 
 func NewPostgres(ctx context.Context, dsn string) (*PostgresStore, error) {
-	p, e := pgxpool.New(ctx, dsn)
+	cfg, e := pgxpool.ParseConfig(dsn)
+	if e != nil {
+		return nil, e
+	}
+	// Keep spare connections for authentication and short control-plane reads
+	// while market planning performs CPU/SQL-heavy snapshot calculations.
+	if cfg.MaxConns < 12 {
+		cfg.MaxConns = 12
+	}
+	if cfg.MinConns < 2 {
+		cfg.MinConns = 2
+	}
+	cfg.MaxConnLifetime = 30 * time.Minute
+	cfg.MaxConnIdleTime = 5 * time.Minute
+	cfg.HealthCheckPeriod = 30 * time.Second
+	p, e := pgxpool.NewWithConfig(ctx, cfg)
 	if e != nil {
 		return nil, e
 	}

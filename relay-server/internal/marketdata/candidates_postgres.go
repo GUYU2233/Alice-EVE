@@ -22,14 +22,9 @@ func (r *PostgresRepository) SearchCandidates(ctx context.Context, q CandidateSe
 		}
 		c.RouteSafetyStatus = "pending"
 		if q.IncludeDepth {
-			c.AskLevels, err = r.depthLevels(ctx, c.SourceRegionID, c.SourceLocationID, c.TypeID, false)
-			if err != nil {
-				return CandidatePage{}, err
-			}
-			c.BidLevels, err = r.depthLevels(ctx, c.DestinationRegionID, c.DestinationLocationID, c.TypeID, true)
-			if err != nil {
-				return CandidatePage{}, err
-			}
+			// The candidate cursor owns one pooled connection. Fetching depth before
+			// closing it needs another connection per worker and can starve auth/job
+			// status reads. Depth is loaded in a second phase below.
 		}
 		if len(out.Items) == q.Limit {
 			out.HasMore = true
@@ -39,6 +34,20 @@ func (r *PostgresRepository) SearchCandidates(ctx context.Context, q CandidateSe
 	}
 	if err := rows.Err(); err != nil {
 		return CandidatePage{}, err
+	}
+	rows.Close()
+	if q.IncludeDepth {
+		for i := range out.Items {
+			c := &out.Items[i]
+			c.AskLevels, err = r.depthLevels(ctx, c.SourceRegionID, c.SourceLocationID, c.TypeID, false)
+			if err != nil {
+				return CandidatePage{}, err
+			}
+			c.BidLevels, err = r.depthLevels(ctx, c.DestinationRegionID, c.DestinationLocationID, c.TypeID, true)
+			if err != nil {
+				return CandidatePage{}, err
+			}
+		}
 	}
 	return out, nil
 }
