@@ -222,8 +222,8 @@ func NewServer(st ...store.Store) *Server {
 				if jobs, jobsErr := marketplan.NewPostgresRepository(pg.Pool); jobsErr == nil {
 					s.marketPlanJobs = jobs
 					engine := marketplan.PlanningEngine{Candidates: repo, Routes: s.routePlanner}
-					workers := envPositiveInt("MARKET_PLAN_WORKERS", 4)
-					if worker, workerErr := marketplan.NewWorker(jobs, engine, marketplan.WorkerConfig{Concurrency: workers, BatchSize: workers * 2}); workerErr == nil {
+					workers := envPositiveInt("MARKET_PLAN_WORKERS", 2)
+					if worker, workerErr := marketplan.NewWorker(jobs, engine, marketplan.WorkerConfig{Concurrency: workers, BatchSize: workers, SliceBudget: 90 * time.Second}); workerErr == nil {
 						s.marketPlanWorker = worker
 						worker.Start(context.Background())
 					}

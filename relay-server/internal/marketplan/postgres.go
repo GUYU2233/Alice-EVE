@@ -68,7 +68,7 @@ func (r *PostgresRepository) ResultsAfter(ctx context.Context, account, id strin
 	return out, rows.Err()
 }
 func (r *PostgresRepository) RequeueWatching(ctx context.Context) (int64, error) {
-	tag, err := r.pool.Exec(ctx, `UPDATE market_plan_jobs j SET state='queued',updated_at=now() WHERE state='watching' AND EXISTS (SELECT 1 FROM region_market_snapshots s WHERE (s.region_id=ANY(j.source_region_ids||j.destination_region_ids) OR j.destination_scope='all_collected_regions') AND s.published_at>j.updated_at)`)
+	tag, err := r.pool.Exec(ctx, `UPDATE market_plan_jobs j SET state='queued',snapshot_signature=(SELECT max(s.published_at)::text FROM region_market_snapshots s WHERE s.region_id=ANY(j.source_region_ids||j.destination_region_ids) OR j.destination_scope='all_collected_regions'),updated_at=now() WHERE state='watching' AND EXISTS (SELECT 1 FROM region_market_snapshots s WHERE (s.region_id=ANY(j.source_region_ids||j.destination_region_ids) OR j.destination_scope='all_collected_regions') AND s.published_at>COALESCE(NULLIF(j.snapshot_signature,'')::timestamptz,'epoch'::timestamptz))`)
 	if err != nil {
 		return 0, err
 	}
