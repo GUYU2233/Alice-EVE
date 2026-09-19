@@ -44,6 +44,7 @@ type RelayClient struct {
 	secrets                                 storage.SecretStore
 	routeCache                              *routeClientCache
 	entityCache                             *entityClientCache
+	refreshMu                               sync.Mutex
 }
 
 func IsOAuthPending(err error) bool {
@@ -118,9 +119,20 @@ func (r *RelayClient) SaveOAuthCredentials(c OAuthCredentials) error {
 	return nil
 }
 func (r *RelayClient) RefreshToken(ctx context.Context) (OAuthCredentials, error) {
+	return r.refreshTokenOnce(ctx, "")
+}
+func (r *RelayClient) refreshTokenOnce(ctx context.Context, failedAccess string) (OAuthCredentials, error) {
+	r.refreshMu.Lock()
+	defer r.refreshMu.Unlock()
 	r.mu.RLock()
-	refresh, base := r.refreshToken, r.url
+	refresh, access := r.refreshToken, r.accessToken
 	r.mu.RUnlock()
+	// A concurrent request may already have rotated the refresh family while this
+	// request waited for refreshMu. Reuse that new access token instead of replaying
+	// the one-time refresh credential and revoking the whole family.
+	if failedAccess != "" && access != "" && access != failedAccess {
+		return OAuthCredentials{AccessToken: access, RefreshToken: refresh}, nil
+	}
 	if refresh == "" {
 		return OAuthCredentials{}, fmt.Errorf("refresh token unavailable")
 	}
@@ -132,7 +144,6 @@ func (r *RelayClient) RefreshToken(ctx context.Context) (OAuthCredentials, error
 	if err := r.SaveOAuthCredentials(out); err != nil {
 		return OAuthCredentials{}, err
 	}
-	_ = base
 	return out, nil
 }
 func (r *RelayClient) BeginOAuthPKCE(ctx context.Context, deviceName string) (OAuthStartResponse, string, error) {
@@ -315,8 +326,10 @@ func (r *RelayClient) doRequest(ctx context.Context, m, p string, body []byte, o
 		return &RelayError{Kind: "request", Err: e}
 	}
 	req.Header.Set("Content-Type", "application/json")
+	failedAccess := ""
 	if authenticated {
 		r.auth(req)
+		failedAccess = strings.TrimPrefix(req.Header.Get("Authorization"), "Bearer ")
 	}
 	resp, e := r.client.Do(req)
 	if e != nil {
@@ -348,7 +361,7 @@ func (r *RelayClient) doRequest(ctx context.Context, m, p string, body []byte, o
 		// Access tokens are short-lived while the desktop refresh credential is
 		// durable. Refresh once and replay the authenticated request transparently.
 		if authenticated && resp.StatusCode == http.StatusUnauthorized && p != "/api/v1/auth/refresh" && ctx.Value(refreshAttemptKey{}) == nil {
-			if _, refreshErr := r.RefreshToken(ctx); refreshErr == nil {
+			if _, refreshErr := r.refreshTokenOnce(ctx, failedAccess); refreshErr == nil {
 				return r.doRequest(context.WithValue(ctx, refreshAttemptKey{}, true), m, p, body, out, authenticated)
 			}
 		}

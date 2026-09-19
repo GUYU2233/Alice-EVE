@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -144,6 +145,63 @@ func TestOAuthPendingResponseRemainsRetryable(t *testing.T) {
 	}
 	if client.pendingOAuthState != "" || client.pendingOAuthVerifier != "" {
 		t.Fatal("successful response did not consume local OAuth capability")
+	}
+}
+
+func TestConcurrentUnauthorizedRequestsShareOneRotatingRefresh(t *testing.T) {
+	var mu sync.Mutex
+	refreshCalls := 0
+	protectedCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/v1/auth/refresh" {
+			mu.Lock()
+			refreshCalls++
+			call := refreshCalls
+			mu.Unlock()
+			if call > 1 {
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"error":{"message":"refresh replay"}}`))
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+			_, _ = w.Write([]byte(`{"accessToken":"new-access","refreshToken":"new-refresh"}`))
+			return
+		}
+		mu.Lock()
+		protectedCalls++
+		mu.Unlock()
+		if r.Header.Get("Authorization") != "Bearer new-access" {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":{"message":"expired"}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"items":[],"nextCursor":0}`))
+	}))
+	defer server.Close()
+	client := NewRelayClientWithSecrets(storage.NewMemorySecretStore())
+	_ = client.SetURL(server.URL)
+	if err := client.SaveOAuthCredentials(OAuthCredentials{AccessToken: "old-access", RefreshToken: "old-refresh"}); err != nil {
+		t.Fatal(err)
+	}
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	for i := 0; i < 2; i++ {
+		go func() { <-start; _, e := client.FetchOutbox(context.Background(), 0, 1); errs <- e }()
+	}
+	close(start)
+	for i := 0; i < 2; i++ {
+		if e := <-errs; e != nil {
+			t.Fatalf("request failed: %v", e)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if refreshCalls != 1 {
+		t.Fatalf("refresh calls=%d want 1", refreshCalls)
+	}
+	if protectedCalls < 4 {
+		t.Fatalf("protected calls=%d want at least 4", protectedCalls)
 	}
 }
 
