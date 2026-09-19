@@ -14,12 +14,14 @@ EVE Online 中文信息助手的本地优先原型，当前版本为 **v0.0.1-al
 
 ## Alpha 能力
 
-- 服务端（Server）健康检查、设备配对、Token 认证与撤销
-- 桌面端测试告警发布
-- 移动端告警获取与确认
-- 桌面 Outbox、ACK 与重试基础
-- PostgreSQL Store 与部署模板
-- ESI Gateway、PKCE 和 Intel 风险评分基础
+- 服务端健康检查、账户/设备会话、Token 轮换与撤销
+- EVE SSO/PKCE、加密 refresh grant 和账户隔离的只读 ESI 同步
+- Chatlogs/Gamelogs 本地增量采集、SQLite 游标和结构化事件
+- 版本化 SDE SQLite/PostgreSQL 导入、校验与原子激活
+- 全区域市场调度、原子快照、32 档订单深度与候选查询
+- 单品、同路线组合和取送链式贸易规划
+- 可复用安全路线模块、批量路线 API 和分层缓存
+- WSS、Outbox、ACK、游标恢复与移动端告警基础
 
 ## 术语与兼容性
 
@@ -53,7 +55,7 @@ flutter build apk --release
 
 公开文档同样不得暴露真实公网 IP、域名、主机别名、绝对运维路径、Cloudflare Zone ID、DNS/代理细节或其他可定位生产环境的信息；示例必须使用占位符或文档保留值。公开仓库与私有运维仓库的边界见 [`docs/security-public-boundary.md`](docs/security-public-boundary.md)。
 
-当前 Alpha 仍不包含完整 EVE SSO 角色绑定、FCM/APNs、完整 WSS 实时推送、市场工作台和正式代码签名。
+当前 Alpha 仍不包含生产 FCM/APNs、完整三端移动实时联调、玩家建筑完整名称覆盖、正式代码签名和自动更新发布链。
 
 ## 发布文件
 

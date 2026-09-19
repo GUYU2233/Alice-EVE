@@ -19,9 +19,16 @@ import (
 	"relay-server/internal/auth"
 	"relay-server/internal/authn"
 	"relay-server/internal/conversations"
+	"relay-server/internal/esi"
+	"relay-server/internal/esidata"
+	"relay-server/internal/esipublic"
+	"relay-server/internal/esisync"
+	"relay-server/internal/evegrant"
 	"relay-server/internal/httpapi"
+	"relay-server/internal/marketdata"
 	"relay-server/internal/notifications"
 	"relay-server/internal/realtime"
+	"relay-server/internal/routeplanner"
 	"relay-server/internal/store"
 )
 
@@ -55,6 +62,16 @@ type Server struct {
 	pairs            map[string]PairResponse
 	mux              *http.ServeMux
 	oauth            *auth.Service
+	eveGrants        *evegrant.Service
+	esiData          esidata.Repository
+	esiPublic        *esipublic.Service
+	marketCollector  *marketdata.Collector
+	marketRepo       *marketdata.PostgresRepository
+	marketScheduler  *marketdata.Scheduler
+	routePlanner     routeRouter
+	candidateRepo    marketdata.CandidateRepository
+	esiWorker        *esisync.Worker
+	esiJobs          esisync.JobRepository
 	accountRepo      accounts.AccountRepository
 	sessionRepo      accounts.SessionRepository
 	accountService   *accounts.Service
@@ -71,10 +88,37 @@ type Server struct {
 	handlerOnce      sync.Once
 }
 
+func envPositiveInt(name string, fallback int) int {
+	value, err := strconv.Atoi(strings.TrimSpace(os.Getenv(name)))
+	if err != nil || value < 1 {
+		return fallback
+	}
+	return value
+}
+
+func publicESIUserAgent() string {
+	if value := strings.TrimSpace(os.Getenv("ESI_USER_AGENT")); value != "" {
+		return value
+	}
+	return "Alice-EVE relay-server/1.0"
+}
+
 type syncResponse struct {
 	Messages []Envelope `json:"messages"`
 	Cursor   int64      `json:"cursor"`
 	HasMore  bool       `json:"hasMore,omitempty"`
+}
+
+// ConfigurePublicESI replaces the public ESI gateway while retaining the server's
+// account-independent public_data_cache repository. It is primarily useful for
+// deployments with a custom ESI endpoint and deterministic integration tests.
+func (s *Server) ConfigurePublicESI(gateway *esi.Gateway) error {
+	service, err := esipublic.New(gateway, s.esiData)
+	if err != nil {
+		return err
+	}
+	s.esiPublic = service
+	return nil
 }
 
 func (s *Server) ConfigureFCM(dispatcher notifications.Dispatcher) error {
@@ -155,10 +199,35 @@ func NewServer(st ...store.Store) *Server {
 	if realtimeHub == nil {
 		realtimeHub = realtime.NewHub()
 	}
-	s := &Server{store: backend, seen: map[string]bool{}, pairs: map[string]PairResponse{}, deviceChallenges: map[string]deviceChallenge{}, challengeRepo: challengeRepo, mux: http.NewServeMux(), accountRepo: accountRepo, accountService: accountService, notifications: notificationService, conversationRepo: convRepo, conversationAuth: convAuth, conversationSvc: conversations.NewService(convRepo, convAuth), realtimeHub: realtimeHub, outboxWorker: outboxWorker, outboxNotifier: outboxNotifier}
+	var esiData esidata.Repository = esidata.NewMemoryRepository()
+	if pg, ok := backend.(*store.PostgresStore); ok {
+		if durable, repoErr := esidata.NewPostgresRepository(pg.Pool); repoErr == nil {
+			esiData = durable
+		}
+	}
+	s := &Server{store: backend, seen: map[string]bool{}, pairs: map[string]PairResponse{}, deviceChallenges: map[string]deviceChallenge{}, challengeRepo: challengeRepo, mux: http.NewServeMux(), accountRepo: accountRepo, accountService: accountService, esiData: esiData, notifications: notificationService, conversationRepo: convRepo, conversationAuth: convAuth, conversationSvc: conversations.NewService(convRepo, convAuth), realtimeHub: realtimeHub, outboxWorker: outboxWorker, outboxNotifier: outboxNotifier}
+	baseURL := strings.TrimSpace(os.Getenv("ESI_BASE_URL"))
+	gateway, gatewayErr := esi.NewGateway(&esi.Client{BaseURL: baseURL, UserAgent: publicESIUserAgent()})
+	if gatewayErr == nil {
+		s.esiPublic, _ = esipublic.New(gateway, esiData)
+		if pg, ok := backend.(*store.PostgresStore); ok {
+			if repo, repoErr := marketdata.NewPostgresRepository(pg.Pool); repoErr == nil {
+				s.marketCollector, _ = marketdata.NewCollector(gateway, repo)
+				s.marketRepo = repo
+				s.routePlanner = routeplanner.New(routeplanner.PostgresLoader{Pool: pg.Pool}, 10*time.Minute)
+				s.candidateRepo = repo
+				maxRegions := envPositiveInt("MARKET_MAX_ACTIVE_REGIONS", marketdata.DefaultSchedulerMaxRegions)
+				if scheduler, schedulerErr := marketdata.NewScheduler(repo, s.marketCollector, marketdata.SchedulerConfig{MaxRegions: maxRegions}); schedulerErr == nil {
+					s.marketScheduler = scheduler
+					scheduler.Start(context.Background())
+				}
+			}
+		}
+	}
 	convAuth.server = s
 	s.conversationSvc.SetRunEventPublisher(&conversationRunPublisher{server: s})
-	// OAuth is opt-in. The server validates state/PKCE but never exchanges or stores EVE tokens.
+	// OAuth and refresh-grant persistence are opt-in. When OAuth is enabled, a
+	// valid encryption keyring is required so completion fails closed.
 	if endpoint := strings.TrimSpace(os.Getenv("EVE_SSO_AUTHORIZATION_ENDPOINT")); endpoint != "" {
 		if oauthService, err := auth.NewService(auth.OAuthConfig{
 			AuthorizationEndpoint: endpoint,
@@ -171,7 +240,28 @@ func NewServer(st ...store.Store) *Server {
 			Provider:              "eve",
 			Scopes:                strings.Fields(os.Getenv("EVE_SSO_SCOPES")),
 		}); err == nil {
-			s.oauth = oauthService
+			if keyring, keyErr := evegrant.ParseKeyring(os.Getenv("EVE_GRANT_KEYRING")); keyErr == nil {
+				var grantRepo evegrant.Repository = evegrant.NewMemoryRepository()
+				if pg, ok := backend.(*store.PostgresStore); ok {
+					if durable, repoErr := evegrant.NewPostgresRepository(pg.Pool); repoErr == nil {
+						grantRepo = durable
+					}
+				}
+				if grants, grantErr := evegrant.NewService(grantRepo, keyring); grantErr == nil {
+					s.oauth, s.eveGrants = oauthService, grants
+					if pg, ok := backend.(*store.PostgresStore); ok {
+						if jobs, jobErr := esisync.NewPostgresJobRepository(pg.Pool); jobErr == nil {
+							if gateway, esiErr := esi.NewGateway(&esi.Client{BaseURL: os.Getenv("EVE_ESI_BASE_URL"), UserAgent: os.Getenv("EVE_ESI_USER_AGENT")}); esiErr == nil {
+								s.esiJobs = jobs
+								refreshClient := &esisync.RefreshClient{Endpoint: oauthService.Config.TokenEndpoint, ClientID: oauthService.Config.ClientID, HTTP: oauthService.Config.HTTPClient}
+								refreshClient.SetClientCredential(oauthService.Config.ClientCredential)
+								s.esiWorker = &esisync.Worker{Jobs: jobs, Grants: grants, Refresh: refreshClient, ESI: gateway, Data: esiData}
+								s.esiWorker.Start(context.Background())
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 	s.mux.HandleFunc("/health", s.health)
@@ -187,6 +277,15 @@ func NewServer(st ...store.Store) *Server {
 	s.mux.HandleFunc("/api/v1/account/devices/revoke-all", s.revokeAllAccountDevices)
 	s.mux.HandleFunc("/api/v1/auth/refresh", s.refreshSession)
 	s.mux.HandleFunc("/api/v1/auth/token/refresh", s.refreshSession)
+	s.mux.HandleFunc("/api/v1/eve/sync-status", s.eveSyncStatus)
+	s.mux.HandleFunc("/api/v1/eve/characters", s.eveCharacterData)
+	s.mux.HandleFunc("/api/v1/eve/characters/", s.eveCharacterData)
+	s.mux.HandleFunc("/api/v1/eve/details/", s.eveOnDemandDetail)
+	s.mux.HandleFunc("/api/v1/eve/public/", s.evePublicData)
+	s.mux.HandleFunc("/api/v1/trade/market/", s.tradeMarket)
+	s.mux.HandleFunc("/api/v1/trade/routes", s.tradeRoute)
+	s.mux.HandleFunc("/api/v1/trade/candidates/search", s.tradeCandidateSearch)
+	s.mux.HandleFunc("/api/v1/trade/plans/", s.tradePlanner)
 	s.mux.HandleFunc("/api/v1/pair", s.pair)
 	s.mux.HandleFunc("/api/v1/pair/confirm", s.confirmPair)
 	s.mux.HandleFunc("/api/v1/events", s.eventsStream)
@@ -216,6 +315,12 @@ func NewServer(st ...store.Store) *Server {
 func (s *Server) Close() error {
 	if s == nil {
 		return nil
+	}
+	if s.marketScheduler != nil {
+		s.marketScheduler.Close()
+	}
+	if s.esiWorker != nil {
+		s.esiWorker.Close()
 	}
 	if s.outboxWorker != nil {
 		_ = s.outboxWorker.Close()

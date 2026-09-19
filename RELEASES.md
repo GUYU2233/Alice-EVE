@@ -20,6 +20,10 @@
 
 历史提交曾包含 `relay-server/relay-linux`、`relay-server/relay-prod`、`relay-server/relay-server/bin/relay-server` 和 `relay-server/relay-server/relay-server.exe`；这些旧服务端二进制不属于客户端发布产物，且当前命名 refs 已不再包含它们。
 
+## Latest verified local desktop build
+
+当前源码已验证可生成 `desktop-app/build/bin/eve-assistant.exe`。该文件位于被忽略的 `build/` 目录，本次源码提交不会上传 EXE；发布摘要应由正式发布流水线单独生成。
+
 ## Checksums
 
-`releases/SHA256SUMS.txt` 是当前跟踪的清单，列出上述四个工作区产物的 SHA-256；清单中的文件名相对于 `releases/` 目录解析。产物本身被忽略，不应据此声称它们已经提交到 Git 或上传到远端。
+`releases/SHA256SUMS.txt` 是当前跟踪的历史发布清单；清单中的文件名相对于 `releases/` 目录解析。产物本身被忽略，不应据此声称它们已经提交到 Git 或上传到远端。

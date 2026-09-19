@@ -17,8 +17,10 @@ type Outbox struct {
 }
 
 func EnsureReliableSchema(ctx context.Context, s Store) error {
-	_, e := s.Exec(ctx, `CREATE TABLE IF NOT EXISTS outbox (id TEXT PRIMARY KEY, payload TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, next_attempt_ms INTEGER NOT NULL, acked INTEGER NOT NULL DEFAULT 0); CREATE TABLE IF NOT EXISTS sync_cursor (name TEXT PRIMARY KEY, cursor INTEGER NOT NULL DEFAULT 0); CREATE TABLE IF NOT EXISTS pairing_state (id INTEGER PRIMARY KEY CHECK(id=1), payload BLOB NOT NULL, updated_ms INTEGER NOT NULL)`)
-	return e
+	if _, e := s.Exec(ctx, `CREATE TABLE IF NOT EXISTS outbox (id TEXT PRIMARY KEY, payload TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, next_attempt_ms INTEGER NOT NULL, acked INTEGER NOT NULL DEFAULT 0); CREATE TABLE IF NOT EXISTS sync_cursor (name TEXT PRIMARY KEY, cursor INTEGER NOT NULL DEFAULT 0); CREATE TABLE IF NOT EXISTS pairing_state (id INTEGER PRIMARY KEY CHECK(id=1), payload BLOB NOT NULL, updated_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS chat_log_cursor (path TEXT PRIMARY KEY, offset INTEGER NOT NULL, size INTEGER NOT NULL, modified_ms INTEGER NOT NULL, updated_ms INTEGER NOT NULL)`); e != nil {
+		return e
+	}
+	return ensureLocalIngestionSchema(ctx, s)
 }
 func Enqueue(ctx context.Context, s Store, e protocol.EventEnvelope) (string, error) {
 	if e.MessageID == "" {

@@ -1,6 +1,6 @@
 # EVE Assistant Server
 
-Go 服务端，负责桌面端和手机端之间的安全通信。当前是 MVP 骨架。
+Go 服务端，负责账户/设备安全通信、EVE SSO 与只读 ESI 同步、公共数据缓存、全区域市场采集、贸易规划和共享路线计算。
 
 > 兼容性说明：产品和文档统一称为“服务端”（Server）。仅为保持代码目录与既有接口兼容，保留项目目录 `relay-server/`、启动路径 `cmd/relay-server` 和现有 API 路径；不改变 API 行为。
 
@@ -41,8 +41,20 @@ Content-Type: application/json
 - `GET /api/v1/auth/sso/start` 是浏览器 flow：服务端生成 PKCE verifier/nonce，state 绑定服务端保存的 verifier、nonce 和 `__Host-eve-oauth` cookie；cookie 为 `Secure; HttpOnly; SameSite=Lax; Path=/`，回调成功或失败都会清除。
 - `GET /api/v1/auth/sso/callback` 只接受匹配 state/cookie，失败统一返回 `401 oauth_invalid`；成功只重定向到配置的精确 `EVE_SSO_DEEP_LINK_URI`；未配置时显示不含凭证的完成页，不回跳 callback URI，且不把 code/state/token 放入 redirect。
 - `POST /api/v1/auth/sso/callback` 一次性消费 state，使用 verifier 向 EVE token endpoint 换取短期上游 token，再向 userinfo/verify endpoint 获取最小 `subject`/display name，创建或查找本地 Account 并签发 Server access/refresh 与设备凭证。
-- 上游 EVE token 只在请求内存中存在，不返回、不记录、不持久化；任何 state、PKCE、上游交换或 identity 失败均返回统一的 `oauth_invalid`，避免泄露验证细节。
+- EVE access token 只短时驻留服务端内存；经授权的 refresh grant 使用服务端密钥加密持久化，用于后台只读同步。任何 EVE token 都不返回桌面前端、手机端或模型。state、PKCE、上游交换或 identity 失败使用统一错误边界，避免泄露验证细节。
 - 旧 `/auth/oauth/*` 接口保留兼容，仅执行 state/PKCE 校验；生产新接入应使用 `/auth/sso/*`。
+
+## 市场与共享路线 API
+
+- `POST /api/v1/trade/candidates/search`：按预算、货舱、安全和收益约束查询全品类候选。
+- `POST /api/v1/trade/plans/compose`：在固定起终点路线内组合多物品装载。
+- `POST /api/v1/trade/plans/chain`：生成沿途取货/交付的链式计划。
+- `GET /api/v1/trade/routes`：单条最短安全路线。
+- `POST /api/v1/trade/routes`：最多 500 条批量路线，保持输入顺序；不可达项返回 `unavailable`。
+
+路线模块位于 `internal/routeplanner`。它按 active SDE build 缓存不可变星门图，并使用包含 SDE version 和完整路线约束的有界结果缓存。旧的 PostgreSQL 递归路线查询已经移除。
+
+市场数据由持久化调度器维护，分页采集完成后才原子发布 current/previous 快照；失败批次不可见。订单深度最多保留 32 档，用于加权成交价和货舱利用计算。
 
 ## 开发
 
@@ -65,4 +77,4 @@ channel; reconnect with `?cursor=<last-id>` (or `Last-Event-ID`) and prefer
 
 账号、会话和 refresh token 基础已实现于 `internal/accounts`（详见 `../docs/server-accounts-sessions.md`），迁移为 `migrations/004_accounts_sessions.sql`。服务端签发的 access/refresh token 只以 SHA-256 哈希持久化；refresh 重放会撤销整个 token family，账号撤销会撤销账号下全部会话。现有旧 API 仍保持兼容，新的认证 handler 可按路线图逐步接入。
 
-生产环境必须使用反向代理提供 TLS，并在真正上线前补齐设备认证、配对持久化、WSS、Outbox、ACK、离线消息、限流和 PostgreSQL 存储。
+生产环境必须使用反向代理提供 TLS、PostgreSQL 持久化、最小权限账户、请求限流和受保护的密钥配置。公开仓库只保留脱敏示例；生产域名、地址、路径、数据库连接和密钥不得进入 Git。

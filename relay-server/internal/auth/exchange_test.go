@@ -19,7 +19,7 @@ func TestExchangeUsesPKCEAndDoesNotExposeUpstreamToken(t *testing.T) {
 			if r.Form.Get("client_secret") != "" {
 				t.Error("client secret sent")
 			}
-			_ = json.NewEncoder(w).Encode(map[string]string{"access_token": "upstream-secret"})
+			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "upstream-secret", "refresh_token": "refresh-secret", "expires_in": 1200, "scope": "scope.one"})
 			return
 		}
 		if r.Header.Get("Authorization") != "Bearer upstream-secret" {
@@ -37,9 +37,12 @@ func TestExchangeUsesPKCEAndDoesNotExposeUpstreamToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, id, err := s.Exchange(context.Background(), a.State, "code", c.Verifier)
+	_, id, grant, err := s.Exchange(context.Background(), a.State, "code", c.Verifier)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if grant.RefreshToken != "refresh-secret" || grant.Scope != "scope.one" || grant.ExpiresAt.IsZero() {
+		t.Fatalf("invalid grant metadata")
 	}
 	if id.Provider != "eve" || id.Subject != "123" || id.DisplayName != "Capsuleer" || gotVerifier != c.Verifier {
 		t.Fatalf("identity=%+v verifier=%q", id, gotVerifier)
@@ -57,7 +60,7 @@ func TestExchangeUsesBasicAuthForConfidentialClientAndPKCE(t *testing.T) {
 			sawBasic = ok && user == "client-id" && password == "fixture-value"
 			_ = r.ParseForm()
 			sawVerifier = r.Form.Get("code_verifier") != "" && r.Form.Get("client_secret") == ""
-			_ = json.NewEncoder(w).Encode(map[string]string{"access_token": "upstream"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"access_token": "upstream", "refresh_token": "refresh"})
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"sub": "123", "name": "Pilot"})
@@ -69,7 +72,7 @@ func TestExchangeUsesBasicAuthForConfidentialClientAndPKCE(t *testing.T) {
 	}
 	pkce, _ := NewPKCE()
 	started, _ := s.BeginWithChallenge(pkce.Challenge)
-	if _, _, err := s.Exchange(context.Background(), started.State, "code", pkce.Verifier); err != nil {
+	if _, _, _, err := s.Exchange(context.Background(), started.State, "code", pkce.Verifier); err != nil {
 		t.Fatal(err)
 	}
 	if !sawBasic || !sawVerifier {

@@ -1,0 +1,13 @@
+{"kind":"category","id":1,"name":"Material"}
+{"kind":"group","id":10,"category_id":1,"name":"Mineral"}
+{"kind":"market_group","id":100,"name":"Raw Materials"}
+{"kind":"type","id":34,"group_id":10,"market_group_id":100,"name":"Tritanium","description":"Common mineral"}
+{"kind":"type","id":35,"group_id":10,"market_group_id":100,"name":"Pyerite"}
+{"kind":"type","id":1000,"group_id":10,"name":"Tritanium Blueprint"}
+{"kind":"region","id":10000002,"name":"The Forge"}
+{"kind":"constellation","id":20000020,"region_id":10000002,"name":"Kimotoro"}
+{"kind":"system","id":30000142,"constellation_id":20000020,"name":"Jita","security":0.9459}
+{"kind":"system","id":30000144,"constellation_id":20000020,"name":"Perimeter","security":0.994}
+{"kind":"stargate","id":50000001,"system_id":30000142,"destination_system_id":30000144}
+{"kind":"blueprint","blueprint_type_id":1000,"product_type_id":34,"production_time":60}
+{"kind":"material","blueprint_type_id":1000,"material_type_id":35,"quantity":2}

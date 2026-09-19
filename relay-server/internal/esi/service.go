@@ -2,77 +2,120 @@ package esi
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
+	"errors"
 	"net/url"
 	"strconv"
 	"strings"
 )
 
-// QueryService exposes public read-only ESI data. No account token is accepted.
-type QueryService struct {
-	Client  *Client
-	BaseURL string
-}
-type SolarSystem struct {
-	ID              int64   `json:"system_id"`
-	Name            string  `json:"name"`
-	SecurityStatus  float64 `json:"security_status"`
-	ConstellationID int64   `json:"constellation_id"`
-}
-type ItemType struct {
-	ID        int64  `json:"type_id"`
-	Name      string `json:"name"`
-	GroupID   int64  `json:"group_id"`
-	Published bool   `json:"published"`
+// Gateway exposes typed public and authenticated ESI operations.
+type Gateway struct{ Client *Client }
+
+func NewGateway(client *Client) (*Gateway, error) {
+	if client == nil {
+		return nil, errors.New("ESI client is required")
+	}
+	if strings.TrimSpace(client.UserAgent) == "" {
+		return nil, errors.New("ESI User-Agent is required")
+	}
+	if _, err := client.baseURL(); err != nil {
+		return nil, err
+	}
+	return &Gateway{Client: client}, nil
 }
 
-func (s QueryService) query(ctx context.Context, path string, target any) (bool, error) {
-	base := s.BaseURL
-	if base == "" {
-		base = "https://esi.evetech.net/latest/"
+type UniverseName struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	Category string `json:"category"`
+}
+
+func (g *Gateway) UniverseNames(ctx context.Context, ids []int64) ([]UniverseName, Response, error) {
+	if g == nil || g.Client == nil {
+		return nil, Response{}, errors.New("ESI client is required")
 	}
-	u, err := url.Parse(base)
-	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return false, fmt.Errorf("invalid ESI base URL")
+	if len(ids) == 0 || len(ids) > 1000 {
+		return nil, Response{}, errors.New("IDs must contain 1 to 1000 entries")
 	}
-	u.Path = strings.TrimRight(u.Path, "/") + "/" + strings.TrimLeft(path, "/")
-	q := u.Query()
-	q.Set("datasource", "tranquility")
-	q.Set("language", "en")
-	u.RawQuery = q.Encode()
-	client := s.Client
-	if client == nil {
-		client = &Client{}
+	seen := make(map[int64]struct{}, len(ids))
+	normalized := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			return nil, Response{}, errors.New("ID must be positive")
+		}
+		if _, ok := seen[id]; !ok {
+			seen[id] = struct{}{}
+			normalized = append(normalized, id)
+		}
 	}
-	body, cached, err := client.Get(ctx, u.String())
+	var out []UniverseName
+	meta, err := g.Client.postJSON(ctx, "universe/names/", nil, normalized, &out)
+	return out, meta, err
+}
+
+func (g *Gateway) get(ctx context.Context, path string, query url.Values, token string, target any) (Response, error) {
+	if g == nil || g.Client == nil {
+		return Response{}, errors.New("ESI client is required")
+	}
+	return g.Client.getJSON(ctx, path, query, token, target)
+}
+
+func authenticated(characterID int64, token string) error {
+	if characterID <= 0 {
+		return errors.New("character ID must be positive")
+	}
+	if strings.TrimSpace(token) == "" {
+		return errors.New("access token must not be empty")
+	}
+	return nil
+}
+
+func positive(name string, id int64) error {
+	if id <= 0 {
+		return errors.New(name + " must be positive")
+	}
+	return nil
+}
+
+func idPath(prefix string, id int64, suffix string) string {
+	return prefix + strconv.FormatInt(id, 10) + suffix
+}
+
+func getAllPages[T any](ctx context.Context, g *Gateway, path string, query url.Values, token string) ([]T, Response, error) {
+	if query == nil {
+		query = make(url.Values)
+	} else {
+		query = cloneValues(query)
+	}
+	query.Set("page", "1")
+	var all []T
+	var page []T
+	meta, err := g.get(ctx, path, query, token, &page)
 	if err != nil {
-		return false, err
+		return nil, meta, err
 	}
-	if err = json.Unmarshal(body, target); err != nil {
-		return false, fmt.Errorf("decode ESI response: %w", err)
+	all = append(all, page...)
+	pages := meta.Pages
+	for p := 2; p <= pages; p++ {
+		query.Set("page", strconv.Itoa(p))
+		page = nil
+		current, err := g.get(ctx, path, query, token, &page)
+		if err != nil {
+			return nil, current, err
+		}
+		all = append(all, page...)
+		if current.Pages > pages {
+			pages = current.Pages
+		}
 	}
-	return cached, nil
+	meta.Pages = pages
+	return all, meta, nil
 }
-func (s QueryService) SolarSystem(ctx context.Context, id int64) (SolarSystem, bool, error) {
-	var result SolarSystem
-	if id <= 0 {
-		return result, false, fmt.Errorf("system ID must be positive")
+
+func cloneValues(in url.Values) url.Values {
+	out := make(url.Values, len(in))
+	for key, values := range in {
+		out[key] = append([]string(nil), values...)
 	}
-	cached, err := s.query(ctx, "universe/systems/"+strconv.FormatInt(id, 10)+"/", &result)
-	if err == nil && (result.ID != id || result.Name == "") {
-		err = fmt.Errorf("invalid ESI system response")
-	}
-	return result, cached, err
-}
-func (s QueryService) ItemType(ctx context.Context, id int64) (ItemType, bool, error) {
-	var result ItemType
-	if id <= 0 {
-		return result, false, fmt.Errorf("type ID must be positive")
-	}
-	cached, err := s.query(ctx, "universe/types/"+strconv.FormatInt(id, 10)+"/", &result)
-	if err == nil && (result.ID != id || result.Name == "") {
-		err = fmt.Errorf("invalid ESI type response")
-	}
-	return result, cached, err
+	return out
 }

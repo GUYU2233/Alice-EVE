@@ -42,6 +42,8 @@ type RelayClient struct {
 	pendingOAuthState, pendingOAuthVerifier string
 	client                                  *http.Client
 	secrets                                 storage.SecretStore
+	routeCache                              *routeClientCache
+	entityCache                             *entityClientCache
 }
 
 func IsOAuthPending(err error) bool {
@@ -67,7 +69,7 @@ type OAuthStartResponse struct {
 }
 
 func NewRelayClient() *RelayClient {
-	return &RelayClient{client: &http.Client{Timeout: 8 * time.Second}}
+	return &RelayClient{client: &http.Client{Timeout: 8 * time.Second}, routeCache: newRouteClientCache(10*time.Minute, 2048), entityCache: newEntityClientCache(24*time.Hour, 4096)}
 }
 func NewRelayClientWithSecrets(secrets storage.SecretStore) *RelayClient {
 	r := NewRelayClient()
@@ -124,7 +126,7 @@ func (r *RelayClient) RefreshToken(ctx context.Context) (OAuthCredentials, error
 	}
 	body, _ := json.Marshal(map[string]string{"refreshToken": refresh})
 	var out OAuthCredentials
-	if err := r.do(ctx, http.MethodPost, "/api/v1/auth/refresh", body, &out); err != nil {
+	if err := r.doRequest(ctx, http.MethodPost, "/api/v1/auth/refresh", body, &out, false); err != nil {
 		return OAuthCredentials{}, err
 	}
 	if err := r.SaveOAuthCredentials(out); err != nil {
@@ -143,7 +145,7 @@ func (r *RelayClient) BeginOAuthPKCE(ctx context.Context, deviceName string) (OA
 	challenge := base64.RawURLEncoding.EncodeToString(sum[:])
 	body, _ := json.Marshal(map[string]string{"codeChallenge": challenge, "deviceName": strings.TrimSpace(deviceName), "deviceType": "desktop"})
 	var out OAuthStartResponse
-	if err := r.do(ctx, http.MethodPost, "/api/v1/auth/sso/start", body, &out); err != nil {
+	if err := r.doRequest(ctx, http.MethodPost, "/api/v1/auth/sso/start", body, &out, false); err != nil {
 		return OAuthStartResponse{}, "", err
 	}
 	if out.AuthorizationURL == "" || out.State == "" {
@@ -173,7 +175,7 @@ func (r *RelayClient) CompleteOAuthPKCE(ctx context.Context, state, code, verifi
 	r.mu.Unlock()
 	body, _ := json.Marshal(map[string]string{"state": state, "code": code, "codeVerifier": verifier})
 	var out OAuthCredentials
-	if err := r.do(ctx, http.MethodPost, "/api/v1/auth/sso/callback", body, &out); err != nil {
+	if err := r.doRequest(ctx, http.MethodPost, "/api/v1/auth/sso/callback", body, &out, false); err != nil {
 		return OAuthCredentials{}, err
 	}
 	// Consume the local callback capability only after a successful exchange.
@@ -295,6 +297,12 @@ func (r *RelayClient) Health(ctx context.Context) error {
 	return r.do(ctx, http.MethodGet, "/health", nil, nil)
 }
 func (r *RelayClient) do(ctx context.Context, m, p string, body []byte, out interface{}) error {
+	return r.doRequest(ctx, m, p, body, out, true)
+}
+
+type refreshAttemptKey struct{}
+
+func (r *RelayClient) doRequest(ctx context.Context, m, p string, body []byte, out interface{}, authenticated bool) error {
 	u := r.URL()
 	if u == "" {
 		return &RelayError{Kind: "config", Err: fmt.Errorf("relay URL is not configured")}
@@ -307,7 +315,9 @@ func (r *RelayClient) do(ctx context.Context, m, p string, body []byte, out inte
 		return &RelayError{Kind: "request", Err: e}
 	}
 	req.Header.Set("Content-Type", "application/json")
-	r.auth(req)
+	if authenticated {
+		r.auth(req)
+	}
 	resp, e := r.client.Do(req)
 	if e != nil {
 		kind := "network"
@@ -334,6 +344,13 @@ func (r *RelayClient) do(ctx context.Context, m, p string, body []byte, out inte
 		message := detail.Error.Message
 		if message == "" {
 			message = http.StatusText(resp.StatusCode)
+		}
+		// Access tokens are short-lived while the desktop refresh credential is
+		// durable. Refresh once and replay the authenticated request transparently.
+		if authenticated && resp.StatusCode == http.StatusUnauthorized && p != "/api/v1/auth/refresh" && ctx.Value(refreshAttemptKey{}) == nil {
+			if _, refreshErr := r.RefreshToken(ctx); refreshErr == nil {
+				return r.doRequest(context.WithValue(ctx, refreshAttemptKey{}, true), m, p, body, out, authenticated)
+			}
 		}
 		return &RelayError{Kind: "http", Status: resp.StatusCode, Err: fmt.Errorf("%s", message)}
 	}

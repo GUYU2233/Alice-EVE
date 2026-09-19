@@ -19,9 +19,13 @@ func TestPKCE(t *testing.T) {
 }
 func TestPKCEVerifierRejectsMalformedInput(t *testing.T) {
 	c, err := NewPKCE()
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, verifier := range []string{"short", "a" + string(make([]byte, 128)), "invalid!"} {
-		if VerifyPKCE(verifier, c.Challenge) == nil { t.Fatalf("accepted malformed verifier") }
+		if VerifyPKCE(verifier, c.Challenge) == nil {
+			t.Fatalf("accepted malformed verifier")
+		}
 	}
 }
 

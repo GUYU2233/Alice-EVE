@@ -18,6 +18,14 @@ export function CancelAgentRun(arg1, arg2) {
   return window['go']['main']['App']['CancelAgentRun'](arg1, arg2);
 }
 
+export function ChainEVETradePlans(arg1) {
+  return window['go']['main']['App']['ChainEVETradePlans'](arg1);
+}
+
+export function ChatLogStatus() {
+  return window['go']['main']['App']['ChatLogStatus']();
+}
+
 export function CheckRelayHealth() {
   return window['go']['main']['App']['CheckRelayHealth']();
 }
@@ -30,8 +38,16 @@ export function CloseLocalAgentSession(arg1) {
   return window['go']['main']['App']['CloseLocalAgentSession'](arg1);
 }
 
+export function CollectEVETradeRegion(arg1) {
+  return window['go']['main']['App']['CollectEVETradeRegion'](arg1);
+}
+
 export function CompleteOAuthLogin(arg1, arg2, arg3) {
   return window['go']['main']['App']['CompleteOAuthLogin'](arg1, arg2, arg3);
+}
+
+export function ComposeEVETradePlan(arg1) {
+  return window['go']['main']['App']['ComposeEVETradePlan'](arg1);
 }
 
 export function ConfirmPairing(arg1) {
@@ -50,12 +66,120 @@ export function FetchConversations() {
   return window['go']['main']['App']['FetchConversations']();
 }
 
+export function FetchEVEAccountCharacters() {
+  return window['go']['main']['App']['FetchEVEAccountCharacters']();
+}
+
+export function FetchEVEAlliance(arg1) {
+  return window['go']['main']['App']['FetchEVEAlliance'](arg1);
+}
+
+export function FetchEVECharacterSnapshot(arg1, arg2) {
+  return window['go']['main']['App']['FetchEVECharacterSnapshot'](arg1, arg2);
+}
+
+export function FetchEVECharacterSnapshots(arg1) {
+  return window['go']['main']['App']['FetchEVECharacterSnapshots'](arg1);
+}
+
+export function FetchEVECharacterTradeContext(arg1, arg2, arg3) {
+  return window['go']['main']['App']['FetchEVECharacterTradeContext'](arg1, arg2, arg3);
+}
+
+export function FetchEVEContractBids(arg1, arg2) {
+  return window['go']['main']['App']['FetchEVEContractBids'](arg1, arg2);
+}
+
+export function FetchEVEContractItems(arg1, arg2) {
+  return window['go']['main']['App']['FetchEVEContractItems'](arg1, arg2);
+}
+
+export function FetchEVECorporation(arg1) {
+  return window['go']['main']['App']['FetchEVECorporation'](arg1);
+}
+
+export function FetchEVEHubComparison(arg1) {
+  return window['go']['main']['App']['FetchEVEHubComparison'](arg1);
+}
+
+export function FetchEVEKillmailDetail(arg1, arg2, arg3) {
+  return window['go']['main']['App']['FetchEVEKillmailDetail'](arg1, arg2, arg3);
+}
+
+export function FetchEVEMailBody(arg1, arg2) {
+  return window['go']['main']['App']['FetchEVEMailBody'](arg1, arg2);
+}
+
+export function FetchEVEMarketHistory(arg1, arg2) {
+  return window['go']['main']['App']['FetchEVEMarketHistory'](arg1, arg2);
+}
+
+export function FetchEVEMarketOrders(arg1, arg2, arg3) {
+  return window['go']['main']['App']['FetchEVEMarketOrders'](arg1, arg2, arg3);
+}
+
+export function FetchEVEMarketPrices() {
+  return window['go']['main']['App']['FetchEVEMarketPrices']();
+}
+
+export function FetchEVESecureTradeRoute(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['FetchEVESecureTradeRoute'](arg1, arg2, arg3, arg4);
+}
+
+export function FetchEVESecureTradeRoutes(arg1) {
+  return window['go']['main']['App']['FetchEVESecureTradeRoutes'](arg1);
+}
+
+export function FetchEVEStatus() {
+  return window['go']['main']['App']['FetchEVEStatus']();
+}
+
+export function FetchEVESyncStatus() {
+  return window['go']['main']['App']['FetchEVESyncStatus']();
+}
+
+export function FetchEVETradeHubs() {
+  return window['go']['main']['App']['FetchEVETradeHubs']();
+}
+
+export function FetchEVETradePlans(arg1) {
+  return window['go']['main']['App']['FetchEVETradePlans'](arg1);
+}
+
+export function FetchEVETradeRegionCollection(arg1) {
+  return window['go']['main']['App']['FetchEVETradeRegionCollection'](arg1);
+}
+
+export function FetchEVETradeRoute(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['FetchEVETradeRoute'](arg1, arg2, arg3, arg4);
+}
+
+export function FetchEVEUniverseNames(arg1) {
+  return window['go']['main']['App']['FetchEVEUniverseNames'](arg1);
+}
+
+export function FetchEVEUniverseStation(arg1) {
+  return window['go']['main']['App']['FetchEVEUniverseStation'](arg1);
+}
+
+export function FetchEVEUniverseSystem(arg1) {
+  return window['go']['main']['App']['FetchEVEUniverseSystem'](arg1);
+}
+
+export function FetchEVEUniverseType(arg1) {
+  return window['go']['main']['App']['FetchEVEUniverseType'](arg1);
+}
+
 export function FetchOutbox(arg1, arg2) {
   return window['go']['main']['App']['FetchOutbox'](arg1, arg2);
 }
 
 export function FetchRealtimeSnapshot() {
   return window['go']['main']['App']['FetchRealtimeSnapshot']();
+}
+
+export function GameLogStatus() {
+  return window['go']['main']['App']['GameLogStatus']();
 }
 
 export function GeneratePairingCode() {
@@ -98,6 +222,10 @@ export function PollOAuthLogin() {
   return window['go']['main']['App']['PollOAuthLogin']();
 }
 
+export function PublishChatIntel(arg1) {
+  return window['go']['main']['App']['PublishChatIntel'](arg1);
+}
+
 export function PublishTestAlert() {
   return window['go']['main']['App']['PublishTestAlert']();
 }
@@ -114,6 +242,14 @@ export function RealtimeStatus() {
   return window['go']['main']['App']['RealtimeStatus']();
 }
 
+export function RecentChatIntel() {
+  return window['go']['main']['App']['RecentChatIntel']();
+}
+
+export function RecentGameEvents() {
+  return window['go']['main']['App']['RecentGameEvents']();
+}
+
 export function RefreshOAuthToken() {
   return window['go']['main']['App']['RefreshOAuthToken']();
 }
@@ -126,16 +262,36 @@ export function RelayURL() {
   return window['go']['main']['App']['RelayURL']();
 }
 
+export function RestartChatLogWatcher() {
+  return window['go']['main']['App']['RestartChatLogWatcher']();
+}
+
 export function SDEDirectory() {
   return window['go']['main']['App']['SDEDirectory']();
+}
+
+export function SDELocationNames(arg1) {
+  return window['go']['main']['App']['SDELocationNames'](arg1);
 }
 
 export function SDEStatus() {
   return window['go']['main']['App']['SDEStatus']();
 }
 
+export function SDETypeNames(arg1) {
+  return window['go']['main']['App']['SDETypeNames'](arg1);
+}
+
+export function SearchEVETradeCandidates(arg1) {
+  return window['go']['main']['App']['SearchEVETradeCandidates'](arg1);
+}
+
 export function SendAgentMessage(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['SendAgentMessage'](arg1, arg2, arg3, arg4);
+}
+
+export function SetChatLogsDirectory(arg1) {
+  return window['go']['main']['App']['SetChatLogsDirectory'](arg1);
 }
 
 export function SetRelayURL(arg1) {
@@ -154,6 +310,14 @@ export function StartRealtime(arg1, arg2) {
   return window['go']['main']['App']['StartRealtime'](arg1, arg2);
 }
 
+export function StartupError() {
+  return window['go']['main']['App']['StartupError']();
+}
+
 export function StopRealtime() {
   return window['go']['main']['App']['StopRealtime']();
+}
+
+export function StoredLocalEvents(arg1, arg2) {
+  return window['go']['main']['App']['StoredLocalEvents'](arg1, arg2);
 }

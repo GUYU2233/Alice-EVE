@@ -18,7 +18,9 @@ try {
     $ignoredBinaryPaths = @('mobile-app/web/favicon.png','mobile-app/web/icons/')
     $publicIp = '\b(?!(?:10|127|169\.254|192\.168|192\.0\.2|198\.51\.100|203\.0\.113)\.)(?!(?:172\.(?:1[6-9]|2\d|3[01])))\d{1,3}(?:\.\d{1,3}){3}\b'
     $credential = '(?i)(?:password|passwd|secret|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret)\s*[:=]\s*["''`]?(?!CHANGE_ME|REPLACE_WITH|<redacted|<operator|example\.invalid|localhost|127\.0\.0\.1|\$|providers\.|null|releaseStorePassword|releaseKeyPassword|releaseStoreFile|releaseKeyAlias|release[A-Za-z]|=)[^\s"''`,;}]+'
-    $knownLeak = '(?i)(?:\b(?:sedcn2)\b|(?:156\.239\.242\.141|guyufl\.us\.ci|4bc19d590a7b94ef133866755f7759d9)|/root/(?:cf|ops)|/opt/alice-relay|/etc/alice-relay)'
+    # Operator-specific identifiers belong in a private environment variable, never source control.
+    # Example: ALICE_SECURITY_PRIVATE_PATTERN='(?i)(private-host-alias|private-domain\.invalid)'
+    $knownLeak = [Environment]::GetEnvironmentVariable('ALICE_SECURITY_PRIVATE_PATTERN')
     $secretToken = '(?i)(?:gh[pousr]_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----|xox[baprs]-[0-9A-Za-z-]{20,})'
 
     foreach ($relative in $files) {
@@ -33,7 +35,7 @@ try {
         $lineNumber = 0
         foreach ($line in ($text -split "`r?`n")) {
             $lineNumber++
-            if ($path -ne 'scripts/security-audit.ps1' -and $line -match $knownLeak) { $findings.Add("INFRA ${path}:$lineNumber $($line.Trim())") }
+            if ($knownLeak -and $path -ne 'scripts/security-audit.ps1' -and $line -match $knownLeak) { $findings.Add("INFRA ${path}:$lineNumber $($line.Trim())") }
             if ($line -match $publicIp) { $findings.Add("PUBLIC-IP ${path}:$lineNumber $($line.Trim())") }
             if ($line -match $credential) { $findings.Add("CREDENTIAL ${path}:$lineNumber $($line.Trim())") }
             if ($line -match $secretToken) { $findings.Add("SECRET ${path}:$lineNumber") }

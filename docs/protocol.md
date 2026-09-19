@@ -8,7 +8,7 @@
 Mobile App ── HTTPS/WSS ──> Server <── HTTPS/WSS ── Desktop App
 ```
 
-桌面端只建立出站 WSS；服务端不反向连接桌面端。EVE SSO access/refresh token 只存在桌面端安全存储中，永不上传服务端。
+桌面端只建立出站 WSS；服务端不反向连接桌面端。Alice 会话令牌保存在客户端安全存储；EVE access token 只短时驻留服务端内存，经授权的 EVE refresh grant 由服务端加密持久化以支持后台只读同步。EVE token 不返回前端、手机端或模型。
 
 通信分为：
 

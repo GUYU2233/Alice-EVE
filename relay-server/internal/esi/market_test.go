@@ -7,34 +7,74 @@ import (
 	"testing"
 )
 
-type marketCache struct {
-	body []byte
-	etag string
-}
-
-func (c *marketCache) Get(string) ([]byte, string, bool) { return c.body, c.etag, len(c.body) > 0 }
-func (c *marketCache) Put(_ string, b []byte, e string)  { c.body = b; c.etag = e }
-
-func TestMarketOrdersFiltersType(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/markets/10000002/orders/" {
-			t.Errorf("path %s", r.URL.Path)
+func TestPublicResolverEndpointPaths(t *testing.T) {
+	want := map[string]string{
+		"/corporations/98608844/":      `{"name":"Acme Corp"}`,
+		"/alliances/9901/":             `{"name":"Acme Alliance"}`,
+		"/universe/stations/60003760/": `{"station_id":60003760,"name":"Jita IV - Moon 4"}`,
+	}
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, ok := want[r.URL.Path]
+		if !ok {
+			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
-		if r.URL.Query().Get("datasource") != "tranquility" {
-			t.Error("missing datasource")
+		if r.Header.Get("Authorization") != "" {
+			t.Fatal("public resolver sent bearer")
 		}
-		w.Header().Set("ETag", "m1")
-		w.Write([]byte(`[{"order_id":1,"type_id":34,"price":10},{"order_id":2,"type_id":35,"price":20}]`))
+		w.Header().Set("ETag", `"resolver-v1"`)
+		w.Write([]byte(body))
 	}))
-	defer srv.Close()
-	q := QueryService{BaseURL: srv.URL, Client: &Client{HTTP: srv.Client(), Cache: &marketCache{}}}
-	got, cached, err := q.MarketOrders(context.Background(), 10000002, 34)
-	if err != nil || cached || len(got) != 1 || got[0].OrderID != 1 {
-		t.Fatalf("got=%+v cached=%v err=%v", got, cached, err)
+	defer s.Close()
+	g, err := NewGateway(&Client{BaseURL: s.URL, UserAgent: "test", HTTP: s.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	corp, meta, err := g.Corporation(ctx, 98608844)
+	if err != nil || corp.Name != "Acme Corp" || meta.ETag != `"resolver-v1"` {
+		t.Fatalf("corp=%+v meta=%+v err=%v", corp, meta, err)
+	}
+	alliance, _, err := g.Alliance(ctx, 9901)
+	if err != nil || alliance.Name != "Acme Alliance" {
+		t.Fatalf("alliance=%+v err=%v", alliance, err)
+	}
+	station, _, err := g.UniverseStation(ctx, 60003760)
+	if err != nil || station.Name != "Jita IV - Moon 4" {
+		t.Fatalf("station=%+v err=%v", station, err)
 	}
 }
-func TestMarketOrdersRejectsInvalidIDs(t *testing.T) {
-	if _, _, err := (QueryService{}).MarketOrders(context.Background(), 0, 34); err == nil {
-		t.Fatal("expected error")
+
+func TestAdditionalAuthenticatedEndpointPaths(t *testing.T) {
+	want := map[string]bool{
+		"/characters/7/skillqueue/": false, "/characters/7/wallet/journal/": false,
+		"/characters/7/assets/": false, "/characters/7/orders/": false,
+		"/characters/7/orders/history/": false, "/characters/7/killmails/recent/": false,
+		"/characters/7/notifications/": false,
+	}
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := want[r.URL.Path]; !ok {
+			t.Errorf("unexpected path %s", r.URL.Path)
+		} else {
+			want[r.URL.Path] = true
+		}
+		w.Write([]byte(`[]`))
+	}))
+	defer s.Close()
+	g, err := NewGateway(&Client{BaseURL: s.URL, UserAgent: "test", HTTP: s.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	g.CharacterSkillQueue(ctx, 7, "token")
+	g.CharacterWalletJournal(ctx, 7, "token")
+	g.CharacterAssets(ctx, 7, "token")
+	g.CharacterOrders(ctx, 7, "token", false)
+	g.CharacterOrders(ctx, 7, "token", true)
+	g.CharacterKillmails(ctx, 7, "token", 2)
+	g.CharacterNotifications(ctx, 7, "token")
+	for path, seen := range want {
+		if !seen {
+			t.Errorf("did not request %s", path)
+		}
 	}
 }

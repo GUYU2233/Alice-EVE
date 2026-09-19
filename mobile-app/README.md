@@ -19,7 +19,7 @@ Flutter mobile companion for the EVE Assistant desktop app.
 
 | Provider | Delivery/adapter boundary | Android requirements |
 | --- | --- | --- |
-| FCM | Firebase Messaging is linked in the Android build; `MainActivity` obtains the registration token and `AliceFirebaseMessagingService` receives token/message callbacks. | `INTERNET`; `POST_NOTIFICATIONS` runtime permission on Android 13+; this build uses Firebase project `alice-c59af` and package `com.aliceeve.mobile`; keep the config file ignored. |
+| FCM | Firebase Messaging is linked in the Android build; `MainActivity` obtains the registration token and `AliceFirebaseMessagingService` receives token/message callbacks. | `INTERNET`; `POST_NOTIFICATIONS` runtime permission on Android 13+; project/app configuration is deployment-supplied and its config file must remain ignored. |
 | Xiaomi Mi Push | Add the Xiaomi SDK in an Xiaomi-enabled build flavor and map registration/message callbacks to the common adapter. | `INTERNET`; `POST_NOTIFICATIONS` on Android 13+; Xiaomi/MIUI device and app registration, auto-start/background policy review. |
 | Huawei Push Kit | Add HMS Core/Push Kit only to Huawei-enabled variants and map callbacks to the common adapter. | `INTERNET`; `POST_NOTIFICATIONS` on Android 13+; HMS Core availability and deployment-supplied Push Kit app configuration. |
 | OPPO PUSH | Add the OPPO/Heytap SDK in an OPPO-enabled build flavor and map callbacks to the common adapter. | `INTERNET`; `POST_NOTIFICATIONS` on Android 13+; ColorOS channel and background delivery policy review. |

@@ -2,7 +2,7 @@
 
 > 目录和旧入口 `relay-server` / `cmd/relay-server` 暂保留，以确保已有部署、脚本和客户端兼容；新文案统一使用“服务端”。
 
-> 本文是基于当前工作区代码的审阅和可执行拆分建议，不是一次性重写计划。服务端仍可暂时保留 `relay-server` 仓库目录和旧路径，但产品定位应改为 **Alice-EVE Server**：负责账号、设备、应用版本、设置同步，以及手机端与桌面端 Agent 的安全会话。
+> 本文最初是基于早期工作区代码的审阅和可执行拆分建议。账号/会话、WSS、Outbox、ESI 同步、市场调度、SDE 和共享路线等多个阶段现已落地；未明确标注完成的条目仍作为后续演进参考。服务端保留 `relay-server` 目录和旧路径以维持兼容。
 
 ## 1. 当前审阅结论
 
@@ -99,7 +99,7 @@ func (s *Server) Handler() http.Handler
 | 方法 | 路径 | 作用 |
 |---|---|---|
 | `POST` | `/api/v1/auth/sso/start` | 创建一次性 PKCE state，返回授权 URL；verifier 优先由客户端生成 |
-| `POST` | `/api/v1/auth/sso/callback` | 消费 state，建立/查找 Account，签发设备会话；服务端不保存 EVE access/refresh token |
+| `POST` | `/api/v1/auth/sso/callback` | 消费 state，建立/查找 Account，签发设备会话；access token 只短时驻留，用户授权的 refresh grant 加密保存以支持只读后台同步 |
 | `POST` | `/api/v1/auth/token/refresh` | 轮换 refresh token，旧 token 立即失效 |
 | `POST` | `/api/v1/auth/logout` | 撤销当前会话 |
 | `GET` | `/api/v1/me` | 返回 account、功能开关和协议能力 |

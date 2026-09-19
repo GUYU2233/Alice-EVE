@@ -11,6 +11,8 @@ import (
 
 	"relay-server/internal/auth"
 	"relay-server/internal/authn"
+	"relay-server/internal/esisync"
+	"relay-server/internal/evegrant"
 	"relay-server/internal/httpapi"
 	"relay-server/internal/store"
 )
@@ -121,12 +123,12 @@ func (s *Server) ssoCallback(w http.ResponseWriter, r *http.Request) {
 				httpapi.WriteError(w, r, http.StatusUnauthorized, "oauth_invalid", "oauth callback is invalid")
 				return
 			}
-			callback, identity, exchangeErr := s.oauth.ExchangeBrowser(r.Context(), state, code, nonce, cookie.Value)
+			callback, identity, grant, exchangeErr := s.oauth.ExchangeBrowser(r.Context(), state, code, nonce, cookie.Value)
 			if exchangeErr != nil {
 				httpapi.WriteError(w, r, http.StatusUnauthorized, "oauth_invalid", "oauth callback is invalid")
 				return
 			}
-			s.issueSSOSession(w, r, callback, identity, true)
+			s.issueSSOSession(w, r, callback, identity, grant, true)
 			return
 		}
 		// Native transactions never expose the verifier to the browser. Stage the
@@ -161,12 +163,13 @@ func (s *Server) ssoCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	var callback auth.CallbackState
 	var identity auth.Identity
+	var grant auth.Grant
 	var err error
 	if req.Code != "" {
 		// Retain compatibility for native clients that directly receive a code.
-		callback, identity, err = s.oauth.Exchange(r.Context(), req.State, req.Code, req.CodeVerifier)
+		callback, identity, grant, err = s.oauth.Exchange(r.Context(), req.State, req.Code, req.CodeVerifier)
 	} else {
-		callback, identity, err = s.oauth.CompleteNative(r.Context(), req.State, req.CodeVerifier)
+		callback, identity, grant, err = s.oauth.CompleteNative(r.Context(), req.State, req.CodeVerifier)
 	}
 	if errors.Is(err, auth.ErrAuthorizationPending) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -180,11 +183,11 @@ func (s *Server) ssoCallback(w http.ResponseWriter, r *http.Request) {
 		httpapi.WriteError(w, r, 401, "oauth_invalid", "oauth callback is invalid")
 		return
 	}
-	s.issueSSOSession(w, r, callback, identity, false)
+	s.issueSSOSession(w, r, callback, identity, grant, false)
 	return
 }
 
-func (s *Server) issueSSOSession(w http.ResponseWriter, r *http.Request, callback auth.CallbackState, identity auth.Identity, redirect bool) {
+func (s *Server) issueSSOSession(w http.ResponseWriter, r *http.Request, callback auth.CallbackState, identity auth.Identity, grant auth.Grant, redirect bool) {
 	if s.accountService == nil || s.store == nil {
 		httpapi.WriteError(w, r, 503, "auth_unavailable", "authentication is unavailable")
 		return
@@ -193,6 +196,17 @@ func (s *Server) issueSSOSession(w http.ResponseWriter, r *http.Request, callbac
 	if err != nil {
 		httpapi.WriteError(w, r, 401, "identity_invalid", "identity is invalid")
 		return
+	}
+	// Persist the encrypted upstream grant before creating any Alice credential.
+	// Missing configuration or storage failure is fail-closed.
+	if s.eveGrants == nil || grant.RefreshToken == "" || s.eveGrants.Save(r.Context(), evegrant.Grant{AccountID: account.ID, ProviderSubject: identity.Subject, RefreshToken: grant.RefreshToken, ExpiresAt: grant.ExpiresAt, Scope: grant.Scope}) != nil {
+		httpapi.WriteError(w, r, 503, "auth_unavailable", "authentication is unavailable")
+		return
+	}
+	// Grant durability is independent of job scheduling. Enqueue only after Save;
+	// a transient scheduler failure must not roll back a valid login/grant.
+	if s.esiJobs != nil {
+		_ = esisync.ScheduleAccount(r.Context(), s.esiJobs, account.ID)
 	}
 	deviceID := ""
 	if callback.DeviceName != "" {

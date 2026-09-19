@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"eve-assistant/desktop-app/internal/evesde"
 	"fmt"
 	"io"
 	"os"
@@ -50,6 +51,9 @@ type SDEIndex struct {
 	mu             sync.RWMutex
 	root, cacheDir string
 	entries        []SDEEntry
+	repository     *evesde.Repository
+	repositoryPath string
+	normalizedPath string
 	status         SDEStatus
 	// Resource limits protect the desktop process from unexpectedly large SDEs.
 	MaxFileBytes                                 int64
@@ -68,6 +72,15 @@ func (s *SDEIndex) SetMetadata(version, source, checksum, signature string) {
 	s.Version, s.Source, s.metadataChecksum, s.Signature = version, source, checksum, signature
 }
 func (s *SDEIndex) Status() SDEStatus { s.mu.RLock(); defer s.mu.RUnlock(); return s.status }
+func (s *SDEIndex) Route(ctx context.Context, from, to int64, mode string, minSecurity *float64) (evesde.RouteResult, error) {
+	s.mu.RLock()
+	repo := s.repository
+	s.mu.RUnlock()
+	if repo == nil {
+		return evesde.RouteResult{}, errors.New("SDE repository unavailable")
+	}
+	return repo.Route(ctx, from, to, evesde.RouteOptions{Mode: evesde.RouteMode(mode), MinSecurity: minSecurity})
+}
 func validateDir(path string) (string, error) {
 	if strings.TrimSpace(path) == "" || strings.ContainsRune(path, 0) {
 		return "", ErrInvalidSDEPath
@@ -92,14 +105,152 @@ func (s *SDEIndex) SetDirectory(path string) error {
 		return err
 	}
 	s.mu.Lock()
+	old := s.repository
+	s.repository = nil
+	s.repositoryPath = ""
+	s.normalizedPath = ""
 	s.root = root
 	s.status = SDEStatus{Directory: root}
 	s.entries = nil
 	s.mu.Unlock()
+	if old != nil {
+		_ = old.Close()
+	}
 	return nil
 }
 func (s *SDEIndex) Directory() string { s.mu.RLock(); defer s.mu.RUnlock(); return s.root }
+
+// OpenDatabase switches directly to an already normalized Alice-EVE SDE database.
+func (s *SDEIndex) OpenDatabase(ctx context.Context, path string) (SDEStatus, error) {
+	abs, err := filepath.Abs(filepath.Clean(path))
+	if err != nil || !strings.EqualFold(filepath.Ext(abs), ".sqlite") {
+		return SDEStatus{}, ErrInvalidSDEPath
+	}
+	repo, err := evesde.Open(abs)
+	if err != nil {
+		return SDEStatus{}, err
+	}
+	m, err := repo.Manifest(ctx)
+	if err != nil {
+		_ = repo.Close()
+		return SDEStatus{}, err
+	}
+	n, err := repo.NamedCount(ctx)
+	if err != nil {
+		_ = repo.Close()
+		return SDEStatus{}, err
+	}
+	st := SDEStatus{Directory: abs, IndexedAt: m.ImportedAt, Files: 1, Entries: n, Ready: true, Version: m.Version, Source: m.Source, Checksum: m.Checksum, EntriesChecksum: m.Checksum, IndexVersion: m.SchemaVersion}
+	s.mu.Lock()
+	old := s.repository
+	s.repository = repo
+	s.repositoryPath = abs
+	s.root = filepath.Dir(abs)
+	s.status = st
+	s.entries = nil
+	s.mu.Unlock()
+	if old != nil {
+		_ = old.Close()
+	}
+	return st, nil
+}
+
+// Close releases an open normalized SQLite repository.
+func (s *SDEIndex) Close() error {
+	s.mu.Lock()
+	repo := s.repository
+	s.repository = nil
+	s.repositoryPath = ""
+	s.mu.Unlock()
+	if repo != nil {
+		return repo.Close()
+	}
+	return nil
+}
+
+// ImportNormalized atomically imports normalized JSONL and switches this index to
+// the formal versioned SQLite repository only after the new database is valid.
+// A failed import leaves the currently selected backend untouched.
+func (s *SDEIndex) ImportNormalized(ctx context.Context, datasetPath string) (SDEStatus, error) {
+	if strings.TrimSpace(datasetPath) == "" || strings.ContainsRune(datasetPath, 0) {
+		return SDEStatus{}, ErrInvalidSDEPath
+	}
+	path, err := filepath.Abs(filepath.Clean(datasetPath))
+	if err != nil {
+		return SDEStatus{}, ErrInvalidSDEPath
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() || !strings.EqualFold(filepath.Ext(path), ".jsonl") {
+		return SDEStatus{}, ErrInvalidSDEPath
+	}
+	s.mu.RLock()
+	version, source, checksum := s.Version, s.Source, s.metadataChecksum
+	cacheDir := s.cacheDir
+	currentRepoPath := s.repositoryPath
+	s.mu.RUnlock()
+	if strings.TrimSpace(version) == "" {
+		version = "unversioned"
+	}
+	if strings.TrimSpace(source) == "" {
+		source = path
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return SDEStatus{}, err
+	}
+	defer f.Close()
+	dbDir := cacheDir
+	if dbDir == "" {
+		dbDir = filepath.Join(filepath.Dir(path), ".evesde")
+	}
+	key := sha256.Sum256([]byte(path))
+	dbPath := filepath.Join(dbDir, "sde-"+hex.EncodeToString(key[:])+".sqlite")
+	if dbPath == currentRepoPath {
+		// Windows cannot atomically replace a database while our read-only handle
+		// is open. Build the replacement under a sibling path, then switch handles.
+		dbPath += ".next"
+	}
+	if err = evesde.Import(ctx, dbPath, f, evesde.Manifest{Version: version, Source: source, Checksum: checksum}, evesde.ImportOptions{MaxBytes: s.MaxTotalBytes, MaxRecords: s.MaxEntries}); err != nil {
+		return SDEStatus{}, err
+	}
+	repo, err := evesde.Open(dbPath)
+	if err != nil {
+		return SDEStatus{}, err
+	}
+	manifest, err := repo.Manifest(ctx)
+	if err != nil {
+		_ = repo.Close()
+		return SDEStatus{}, err
+	}
+	entries, err := repo.NamedCount(ctx)
+	if err != nil {
+		_ = repo.Close()
+		return SDEStatus{}, err
+	}
+	st := SDEStatus{Directory: path, IndexedAt: manifest.ImportedAt, Files: 1, Entries: entries, Ready: true, Version: manifest.Version, Source: manifest.Source, Checksum: manifest.Checksum, EntriesChecksum: manifest.Checksum, IndexVersion: manifest.SchemaVersion}
+	s.mu.Lock()
+	old := s.repository
+	s.repository = repo
+	s.repositoryPath = dbPath
+	s.normalizedPath = path
+	s.root = path
+	s.entries = nil
+	s.status = st
+	s.Version, s.Source, s.metadataChecksum = manifest.Version, manifest.Source, manifest.Checksum
+	s.mu.Unlock()
+	if old != nil {
+		_ = old.Close()
+	}
+	return st, nil
+}
+
 func (s *SDEIndex) Reindex(ctx context.Context) (SDEStatus, error) {
+	s.mu.RLock()
+	normalizedPath := s.normalizedPath
+	s.mu.RUnlock()
+	if normalizedPath != "" {
+		return s.ImportNormalized(ctx, normalizedPath)
+	}
 	s.mu.RLock()
 	root := s.root
 	s.mu.RUnlock()
@@ -330,6 +481,62 @@ func walkJSON(v any, key, src string, out *[]SDEEntry) {
 		}
 	}
 }
+
+// TypeNames resolves type IDs from the configured local SDE. Missing IDs are
+// omitted so callers can safely fall back to public ESI names.
+func (s *SDEIndex) LocationNames(ids []int64) map[int64]string {
+	out := make(map[int64]string)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.repository == nil {
+		return out
+	}
+	for _, id := range ids {
+		if id <= 0 {
+			continue
+		}
+		if x, err := s.repository.SystemByID(context.Background(), id); err == nil && strings.TrimSpace(x.Name) != "" {
+			out[id] = x.Name
+			continue
+		}
+		if x, err := s.repository.RegionByID(context.Background(), id); err == nil && strings.TrimSpace(x.Name) != "" {
+			out[id] = x.Name
+		}
+	}
+	return out
+}
+
+func (s *SDEIndex) TypeNames(ids []int64) map[int64]string {
+	out := make(map[int64]string)
+	s.mu.RLock()
+	repo := s.repository
+	if repo != nil {
+		defer s.mu.RUnlock()
+		for _, id := range ids {
+			if id <= 0 {
+				continue
+			}
+			if typ, err := repo.TypeByID(context.Background(), id); err == nil && strings.TrimSpace(typ.Name) != "" {
+				out[id] = typ.Name
+			}
+		}
+		return out
+	}
+	defer s.mu.RUnlock()
+	wanted := make(map[string]int64, len(ids))
+	for _, id := range ids {
+		if id > 0 {
+			wanted[fmt.Sprint(id)] = id
+		}
+	}
+	for _, e := range s.entries {
+		if id, ok := wanted[e.ID]; ok && strings.TrimSpace(e.Name) != "" {
+			out[id] = e.Name
+		}
+	}
+	return out
+}
+
 func (s *SDEIndex) Query(query string, limit int) []SDEEntry {
 	q := strings.ToLower(strings.TrimSpace(query))
 	if q == "" {
@@ -339,6 +546,18 @@ func (s *SDEIndex) Query(query string, limit int) []SDEEntry {
 		limit = 20
 	}
 	s.mu.RLock()
+	if s.repository != nil {
+		rows, err := s.repository.SearchNamed(context.Background(), query, limit)
+		s.mu.RUnlock()
+		if err != nil {
+			return nil
+		}
+		out := make([]SDEEntry, 0, len(rows))
+		for _, row := range rows {
+			out = append(out, SDEEntry{ID: fmt.Sprint(row.ID), Name: row.Name, Kind: row.Kind, Source: "sqlite"})
+		}
+		return out
+	}
 	defer s.mu.RUnlock()
 	out := make([]SDEEntry, 0, limit)
 	seen := map[string]bool{}

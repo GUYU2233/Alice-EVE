@@ -329,9 +329,9 @@ func (s *Service) CompleteBound(state, code, verifier, nonce, browserBinding str
 
 // ExchangeBrowser consumes a browser-bound transaction. The verifier remains
 // server-side and is never accepted from the browser callback request.
-func (s *Service) ExchangeBrowser(ctx context.Context, state, code, nonce, browserBinding string) (CallbackState, Identity, error) {
+func (s *Service) ExchangeBrowser(ctx context.Context, state, code, nonce, browserBinding string) (CallbackState, Identity, Grant, error) {
 	if code == "" || len(code) > 2048 {
-		return CallbackState{}, Identity{}, errors.New("authorization code is required")
+		return CallbackState{}, Identity{}, Grant{}, errors.New("authorization code is required")
 	}
 	s.States.mu.Lock()
 	record, ok := s.States.records[state]
@@ -339,21 +339,33 @@ func (s *Service) ExchangeBrowser(ctx context.Context, state, code, nonce, brows
 		recordVerifier := record.codeVerifier
 		s.States.mu.Unlock()
 		if recordVerifier == "" {
-			return CallbackState{}, Identity{}, ErrInvalidState
+			return CallbackState{}, Identity{}, Grant{}, ErrInvalidState
 		}
 		callback, err := s.CompleteBound(state, code, recordVerifier, nonce, browserBinding)
 		if err != nil {
-			return CallbackState{}, Identity{}, err
+			return CallbackState{}, Identity{}, Grant{}, err
 		}
 		return s.exchangeIdentity(ctx, callback, code, recordVerifier)
 	}
 	s.States.mu.Unlock()
-	return CallbackState{}, Identity{}, ErrInvalidState
+	return CallbackState{}, Identity{}, Grant{}, ErrInvalidState
 }
 
 type Identity struct{ Provider, Subject, DisplayName string }
+
+// Grant is internal-only OAuth material. Its fields are deliberately excluded
+// from JSON so upstream credentials cannot become part of a public response.
+type Grant struct {
+	RefreshToken string    `json:"-"`
+	ExpiresAt    time.Time `json:"-"`
+	Scope        string    `json:"-"`
+}
+
 type tokenResponse struct {
-	AccessToken string `json:"access_token"`
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    int64  `json:"expires_in"`
+	Scope        string `json:"scope"`
 }
 type oauthErrorResponse struct {
 	Error string `json:"error"`
@@ -366,24 +378,24 @@ func (s *Service) StageNativeCallback(state, code string) error {
 	return s.States.StageAuthorizationCode(state, code)
 }
 
-func (s *Service) CompleteNative(ctx context.Context, state, verifier string) (CallbackState, Identity, error) {
+func (s *Service) CompleteNative(ctx context.Context, state, verifier string) (CallbackState, Identity, Grant, error) {
 	callback, code, err := s.States.ConsumeStaged(state, verifier)
 	if err != nil {
-		return CallbackState{}, Identity{}, err
+		return CallbackState{}, Identity{}, Grant{}, err
 	}
 	return s.exchangeIdentity(ctx, callback, code, verifier)
 }
 
-func (s *Service) Exchange(ctx context.Context, state, code, verifier string) (CallbackState, Identity, error) {
+func (s *Service) Exchange(ctx context.Context, state, code, verifier string) (CallbackState, Identity, Grant, error) {
 	callback, err := s.Complete(state, code, verifier)
 	if err != nil {
-		return CallbackState{}, Identity{}, err
+		return CallbackState{}, Identity{}, Grant{}, err
 	}
 	return s.exchangeIdentity(ctx, callback, code, verifier)
 }
-func (s *Service) exchangeIdentity(ctx context.Context, callback CallbackState, code, verifier string) (CallbackState, Identity, error) {
+func (s *Service) exchangeIdentity(ctx context.Context, callback CallbackState, code, verifier string) (CallbackState, Identity, Grant, error) {
 	if s.Config.TokenEndpoint == "" || s.Config.UserinfoEndpoint == "" {
-		return CallbackState{}, Identity{}, errors.New("oauth identity exchange is not configured")
+		return CallbackState{}, Identity{}, Grant{}, errors.New("oauth identity exchange is not configured")
 	}
 	form := url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {callback.RedirectURI}, "code_verifier": {verifier}}
 	// OAuth clients authenticate exactly once. Public clients identify themselves
@@ -394,7 +406,7 @@ func (s *Service) exchangeIdentity(ctx context.Context, callback CallbackState, 
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.Config.TokenEndpoint, strings.NewReader(form.Encode()))
 	if err != nil {
-		return CallbackState{}, Identity{}, err
+		return CallbackState{}, Identity{}, Grant{}, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
@@ -404,7 +416,7 @@ func (s *Service) exchangeIdentity(ctx context.Context, callback CallbackState, 
 	resp, err := s.Config.HTTPClient.Do(req)
 	if err != nil {
 		log.Printf("oauth upstream stage=token transport_error=true")
-		return CallbackState{}, Identity{}, err
+		return CallbackState{}, Identity{}, Grant{}, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -412,44 +424,55 @@ func (s *Service) exchangeIdentity(ctx context.Context, callback CallbackState, 
 		_ = json.NewDecoder(io.LimitReader(resp.Body, 8<<10)).Decode(&providerError)
 		providerError.Error = safeOAuthErrorCode(providerError.Error)
 		log.Printf("oauth upstream stage=token status=%d error=%s", resp.StatusCode, providerError.Error)
-		return CallbackState{}, Identity{}, errors.New("oauth token exchange failed")
+		return CallbackState{}, Identity{}, Grant{}, errors.New("oauth token exchange failed")
 	}
 	var token tokenResponse
-	if json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&token) != nil || token.AccessToken == "" || len(token.AccessToken) > 4096 {
+	if json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&token) != nil || token.AccessToken == "" || token.RefreshToken == "" || len(token.AccessToken) > 4096 || len(token.RefreshToken) > 8192 || token.ExpiresIn < 0 || len(token.Scope) > 4096 {
 		log.Printf("oauth upstream stage=token invalid_response=true")
-		return CallbackState{}, Identity{}, errors.New("oauth token exchange failed")
+		return CallbackState{}, Identity{}, Grant{}, errors.New("oauth token exchange failed")
 	}
 	infoReq, err := http.NewRequestWithContext(ctx, http.MethodGet, s.Config.UserinfoEndpoint, nil)
 	if err != nil {
-		return CallbackState{}, Identity{}, err
+		return CallbackState{}, Identity{}, Grant{}, err
 	}
 	infoReq.Header.Set("Accept", "application/json")
 	infoReq.Header.Set("Authorization", "Bearer "+token.AccessToken)
 	infoResp, err := s.Config.HTTPClient.Do(infoReq)
 	if err != nil {
 		log.Printf("oauth upstream stage=identity transport_error=true")
-		return CallbackState{}, Identity{}, err
+		return CallbackState{}, Identity{}, Grant{}, err
 	}
 	defer infoResp.Body.Close()
 	if infoResp.StatusCode < 200 || infoResp.StatusCode >= 300 {
 		log.Printf("oauth upstream stage=identity status=%d", infoResp.StatusCode)
-		return CallbackState{}, Identity{}, errors.New("oauth identity lookup failed")
+		return CallbackState{}, Identity{}, Grant{}, errors.New("oauth identity lookup failed")
 	}
 	var raw map[string]any
 	if err := json.NewDecoder(io.LimitReader(infoResp.Body, 64<<10)).Decode(&raw); err != nil {
 		log.Printf("oauth upstream stage=identity invalid_response=true")
-		return CallbackState{}, Identity{}, ErrIdentityInvalid
+		return CallbackState{}, Identity{}, Grant{}, ErrIdentityInvalid
 	}
 	subject := firstString(raw, "sub", "subject", "character_id", "characterId", "CharacterID", "id")
 	if subject == "" {
 		log.Printf("oauth upstream stage=identity subject_missing=true")
-		return CallbackState{}, Identity{}, ErrIdentityInvalid
+		return CallbackState{}, Identity{}, Grant{}, ErrIdentityInvalid
 	}
 	provider := s.Config.Provider
 	if provider == "" {
 		provider = "eve"
 	}
-	return callback, Identity{Provider: provider, Subject: subject, DisplayName: firstString(raw, "name", "character_name", "characterName", "CharacterName")}, nil
+	expiresAt := time.Time{}
+	if token.ExpiresIn > 0 {
+		expiresAt = time.Now().UTC().Add(time.Duration(token.ExpiresIn) * time.Second)
+	}
+	grantedScope := strings.TrimSpace(token.Scope)
+	// EVE's token endpoint may omit scope even though the authorization request
+	// contained explicit scopes. The state is server-created and binds this exact
+	// configured request, so use that requested set as the durable grant metadata.
+	if grantedScope == "" {
+		grantedScope = strings.Join(s.Config.Scopes, " ")
+	}
+	return callback, Identity{Provider: provider, Subject: subject, DisplayName: firstString(raw, "name", "character_name", "characterName", "CharacterName")}, Grant{RefreshToken: token.RefreshToken, ExpiresAt: expiresAt, Scope: grantedScope}, nil
 }
 func safeOAuthErrorCode(value string) string {
 	switch strings.TrimSpace(value) {

@@ -60,3 +60,9 @@ releases/*
 !releases/RELEASES.md
 !releases/*.txt
 releases/archive/
+
+/.local-personal-read-scopes.txt
+
+# Local AI/design tool state
+/.dsh-vision-router/
+/.superdesign/

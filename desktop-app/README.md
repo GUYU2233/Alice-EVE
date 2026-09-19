@@ -1,46 +1,70 @@
-# EVE Assistant Desktop v0.0.1-alpha
+# Alice-EVE Desktop
 
-Go + Wails v2 + React/TypeScript desktop application.
+Go + Wails v2 + React/TypeScript 桌面客户端。
 
-## 发布构建
+## 当前能力
 
-当前 Wails 配置位于 `wails.json`：前端目录为 `frontend`，发布构建会自动执行 `npm run build` 并将资源嵌入 Go 二进制。
+- Alice 账户与 EVE SSO；令牌由 Go 层和操作系统安全存储管理，前端不接触令牌。
+- Chatlogs/Gamelogs 本地增量采集、SQLite 游标和结构化事件。
+- 版本化 SDE SQLite：物品、星系、星门、市场组、蓝图和中文名称。
+- 角色、经济、市场、Intel、告警与 Agent 工作区。
+- 全区域市场候选、订单深度、单品/同路线组合/取送链式贸易规划。
+- 最低安全等级和最大跳数硬约束；批量安全路线调用。
+- 最近一次市场规划本地恢复。
 
-### 环境要求
+## 路线与缓存
+
+市场页面先按起终点星系去重，再通过 `FetchEVESecureTradeRoutes` 一次批量请求路线。Go `RelayClient` 为整个应用提供：
+
+- 路线缓存：10 分钟、最多 2,048 条；键包含起点、终点、安全等级和最大跳数。
+- 公共实体缓存：24 小时、最多 4,096 条；当前覆盖空间站、星系和物品类型。
+- 仅成功实体响应进入缓存；派生路线不写磁盘。
+
+服务端返回 `unavailable` 时不会伪装成零跳。同一星系内不同空间站可合法显示为零星门跳。
+
+## 构建
+
+环境要求：
 
 - Go 1.22+
-- Wails CLI v2（本次验证：v2.15.0）
+- Wails CLI v2（当前验证使用 v2.15.0）
 - Node.js 18+ 与 npm
-- Windows 构建需要 WebView2 Runtime
-
-### 构建命令
+- Windows WebView2 Runtime
 
 ```powershell
 cd desktop-app/frontend
 npm install
 npm run build
-
 cd ..
 wails build -clean
 ```
 
-### 下载产物
+Windows amd64 产物生成于：
 
-Windows amd64 发布文件：
+```text
+build/bin/eve-assistant.exe
+```
 
-- `build/bin/eve-assistant.exe`（约 11.2 MiB）
+构建产物由 `.gitignore` 排除，不提交到源码仓库。正式发布时由发布流水线生成并公布 SHA-256。
 
-本次已验证前端 Vite production build 与 `wails build -clean` 均成功。将该 EXE 复制到目标 Windows 电脑后直接运行即可；首次运行需系统已安装 WebView2 Runtime。
+## 测试
 
-## 项目结构
+```powershell
+go test ./... -count=1
+go vet ./...
+cd frontend
+npm run build
+```
 
-- `internal/app`: 应用服务与生命周期
-- `internal/protocol`: 版本化桌面/移动端事件信封
-- `internal/storage`: SQLite 抽象与事务边界
-- `frontend`: React/TypeScript UI
+## 目录
 
-## 后续工作
+- `internal/app`：应用服务、Relay Client、应用级缓存和 Wails DTO。
+- `internal/eve`：ESI/SDE 桥接。
+- `internal/evesde`：本地 SDE SQLite 查询和路线。
+- `internal/ingest`：本地日志采集。
+- `internal/storage`：SQLite 持久化和安全存储抽象。
+- `frontend`：React/TypeScript UI。
 
-1. 添加 SQLite 驱动与迁移。
-2. 实现 ESI Gateway、SDE repository、Intel pipeline 与服务端 outbox。
-3. 增加调用应用服务的 Wails bindings，避免直接暴露数据库或令牌。
+## 安全边界
+
+不得将 `EveClient.json`、访问令牌、refresh token、数据库、日志、生产地址或本机配置提交到 Git。公开示例只使用占位符；参见仓库根目录 `SECURITY.md`。

@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	"relay-server/internal/auth"
+	"relay-server/internal/evegrant"
 )
 
 func newNativeOAuthTestServer(t *testing.T) (*Server, *httptest.Server, *bool) {
@@ -18,7 +20,7 @@ func newNativeOAuthTestServer(t *testing.T) (*Server, *httptest.Server, *bool) {
 	upstreamTokenSeen := false
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/token" {
-			_ = json.NewEncoder(w).Encode(map[string]string{"access_token": "never-returned"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"access_token": "never-returned", "refresh_token": "never-returned-refresh", "scope": "scope.one"})
 			return
 		}
 		if r.Header.Get("Authorization") == "Bearer never-returned" {
@@ -26,7 +28,13 @@ func newNativeOAuthTestServer(t *testing.T) (*Server, *httptest.Server, *bool) {
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"sub": "eve-char-1", "name": "Pilot"})
 	}))
+	t.Setenv("EVE_SSO_AUTHORIZATION_ENDPOINT", "")
 	s := NewServer()
+	keyring, keyErr := evegrant.ParseKeyring("test=" + base64.RawStdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32)))
+	if keyErr != nil {
+		t.Fatal(keyErr)
+	}
+	s.eveGrants, _ = evegrant.NewService(evegrant.NewMemoryRepository(), keyring)
 	var err error
 	s.oauth, err = auth.NewService(auth.OAuthConfig{AuthorizationEndpoint: "https://login.example/authorize", TokenEndpoint: upstream.URL + "/token", UserinfoEndpoint: upstream.URL + "/userinfo", ClientID: "public", RedirectURI: "https://desktop.example/cb", HTTPClient: upstream.Client()})
 	if err != nil {

@@ -17,6 +17,7 @@ managed PostgreSQL (private network, TLS verification)
 3. Run PostgreSQL migrations using a temporary migration role, then run the service with a dedicated least-privileged runtime role.
 4. Terminate TLS at the reverse proxy, enforce HTTPS, strict CORS/Origin policy, request limits, rate limits, and proxy header sanitization.
 5. Bind the Server to loopback/private networking. Permit database access only from the Server identity/security group.
-6. Run `scripts/security-audit.ps1` (and repository history secret scanning) before creating a public commit or release.
+6. Run `scripts/security-audit.ps1 -IncludeIgnored` (and repository history secret scanning) before creating a public commit or release.
+7. Review `git status --short` and the staged diff. Do not stage `.dsh-*`, `.superdesign/`, build artifacts, databases, logs, local environment files or private runbooks.
 
 The checked-in `relay-server/deploy/alice-relay.service` is a generic Server example; its legacy filename is retained for compatibility. Its executable and environment-file paths are deployment placeholders; keep real paths and credentials in private host configuration. Never use this repository as a source of truth for server state, and do not apply deployment changes automatically to a real server.

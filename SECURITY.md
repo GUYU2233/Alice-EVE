@@ -14,6 +14,8 @@ pwsh -File .\scripts\security-audit.ps1 -IncludeIgnored
 
 The audit is a release gate, not a secret scanner replacement. Review Git history and rotate any credential that was ever committed. Use repository secret scanning (for example GitHub secret scanning/push protection) and an external scanner such as Gitleaks in CI where available.
 
+Before staging a public push, also review `git status --short` and exclude local tool state such as `.dsh-*`, `.superdesign/`, IDE state, build artifacts, databases and runtime logs. Inspect the staged diff—not only the working tree—before pushing.
+
 ## Production configuration
 
 Start from [`relay-server/config/production.env.example`](relay-server/config/production.env.example), then provide the real values through a protected secret manager or a root-readable, untracked environment file. Never put secrets in a systemd unit, Nginx config committed to Git, shell history, issue, log, or chat transcript.
